@@ -8,6 +8,8 @@ langchain-huggingface
 langchain-ollama
 ollama
 pdf2image
+pdfminer.six
+Pillow==10.1.0
 protobuf
 pydantic
 pytesseract

@@ -104,16 +104,19 @@ def display_sidebar(app_modes, DB_DIR, DATA_DIR):
     # Model selection section
     st.sidebar.subheader("Models Configuration")
     
-    # Embedding model selection
+    # Embedding model selection - FIX: Include all models in the list
+# Embedding model selection
+    embedding_models = [
+        "sentence-transformers/all-MiniLM-L6-v2",  # HuggingFace model
+        "BAAI/bge-small-en-v1.5",                  # HuggingFace model
+        "intfloat/e5-small-v2",                    # HuggingFace model
+        "nomic-embed-text"                         # Ollama model (no sentence-transformers/ prefix)
+    ]
+    
     selected_embedding = st.sidebar.selectbox(
         "Embedding Model",
-        [
-            "sentence-transformers/all-MiniLM-L6-v2",
-            "nomic-embed-text",  # Ollama model
-            "BAAI/bge-small-en-v1.5",
-            "intfloat/e5-small-v2"
-        ],
-        index=["sentence-transformers/all-MiniLM-L6-v2", "nomic-embed-text", "BAAI/bge-small-en-v1.5", "intfloat/e5-small-v2"].index(st.session_state.embedding_model)
+        embedding_models,
+        index=embedding_models.index(st.session_state.embedding_model) if st.session_state.embedding_model in embedding_models else 0
     )
     
     if selected_embedding != st.session_state.embedding_model:
@@ -133,15 +136,17 @@ def display_sidebar(app_modes, DB_DIR, DATA_DIR):
         st.rerun()
 
     # LLM model selection
+    llm_models = [
+        "qwen2.5",
+        "qwen2.5-14b",
+        "llama3",
+        "mistral"
+    ]
+    
     selected_llm = st.sidebar.selectbox(
         "LLM Model",
-        [
-            "qwen2.5",
-            "qwen2.5-14b",  # Higher performance
-            "llama3",
-            "mistral"
-        ],
-        index=["qwen2.5", "qwen2.5-14b", "llama3", "mistral"].index(st.session_state.llm_model) if st.session_state.llm_model in ["qwen2.5", "qwen2.5-14b", "llama3", "mistral"] else 0
+        llm_models,
+        index=llm_models.index(st.session_state.llm_model) if st.session_state.llm_model in llm_models else 0
     )
     
     if selected_llm != st.session_state.llm_model:

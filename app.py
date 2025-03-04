@@ -1,5 +1,6 @@
 import os
 import streamlit as st
+import traceback
 
 # Import components
 from components.sidebar import display_sidebar
@@ -38,12 +39,16 @@ def initialize_session_state():
     
     # Initialize RAG system (always needed for RAG chat)
     if "rag_system" not in st.session_state:
-        st.session_state.rag_system = LocalRAG(
-            db_dir=DB_DIR, 
-            data_dir=DATA_DIR,
-            embedding_model_name=st.session_state.embedding_model,
-            model_name=st.session_state.llm_model
-        )
+        try:
+            st.session_state.rag_system = LocalRAG(
+                db_dir=DB_DIR, 
+                data_dir=DATA_DIR,
+                embedding_model_name=st.session_state.embedding_model,
+                model_name=st.session_state.llm_model
+            )
+        except Exception as e:
+            st.error(f"Error initializing RAG system: {str(e)}")
+            st.info("Please check that Ollama is running and the required models are available.")
     
     # Note: Summarizer will be initialized on demand in the component
     # to avoid loading all models at startup
@@ -83,19 +88,24 @@ def main():
         initial_sidebar_state="expanded"
     )
     
-    # Initialize session state
-    initialize_session_state()
-    
-    # Display sidebar with DB_DIR and DATA_DIR parameters
-    display_sidebar(APP_MODES, DB_DIR, DATA_DIR)
-    
-    # Display the selected app
-    if st.session_state.app_mode == "RAG Chat":
-        rag_chat_app()
-    elif st.session_state.app_mode == "Text Summarizer":
-        text_summarizer_app()
-    else:
-        other_tools_app()
+    try:
+        # Initialize session state
+        initialize_session_state()
+        
+        # Display sidebar with DB_DIR and DATA_DIR parameters
+        display_sidebar(APP_MODES, DB_DIR, DATA_DIR)
+        
+        # Display the selected app
+        if st.session_state.app_mode == "RAG Chat":
+            rag_chat_app()
+        elif st.session_state.app_mode == "Text Summarizer":
+            text_summarizer_app()
+        else:
+            other_tools_app()
+    except Exception as e:
+        st.error("An error occurred while loading the application:")
+        st.code(traceback.format_exc())
+        st.info("Try refreshing the page or restarting the application.")
 
 
 if __name__ == "__main__":
