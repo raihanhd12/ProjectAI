@@ -1,5 +1,7 @@
 import streamlit as st
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 from models.rag import RAGModel
+from utils.config import RAGConfig
 
 
 def sidebar_component():
@@ -11,20 +13,18 @@ def sidebar_component():
     # Model selection section
     st.sidebar.subheader("Model Configuration")
 
-    # LLM model selection
-    llm_models = [
-        "llama3",
-        "qwen2.5"
-    ]
+    # LLM model selection using available models from config
+    llm_models = RAGConfig.AVAILABLE_LLM_MODELS
 
     # Initialize session state for model if not present
     if "llm_model" not in st.session_state:
-        st.session_state.llm_model = llm_models[0]
+        st.session_state.llm_model = RAGConfig.DEFAULT_LLM_MODEL
 
     selected_model = st.sidebar.selectbox(
         "Language Model",
         llm_models,
-        index=llm_models.index(st.session_state.llm_model)
+        index=llm_models.index(
+            st.session_state.llm_model) if st.session_state.llm_model in llm_models else 0
     )
 
     # Update model if changed
@@ -32,24 +32,21 @@ def sidebar_component():
         st.session_state.llm_model = selected_model
         # Update model in RAG instance if it exists
         if "rag_model" in st.session_state:
-            st.session_state.rag_model.model_name = selected_model
+            st.session_state.rag_model.llm_model_name = selected_model
             st.sidebar.success(f"Model updated to {selected_model}")
 
-    # Embedding model selection
-    embedding_models = [
-        "nomic-embed-text:latest",
-        "nomic-embed-text",
-        "all-MiniLM-L6-v2"
-    ]
+    # Embedding model selection using available models from config
+    embedding_models = RAGConfig.AVAILABLE_EMBEDDING_MODELS
 
     # Initialize session state for embedding model if not present
     if "embedding_model" not in st.session_state:
-        st.session_state.embedding_model = embedding_models[0]
+        st.session_state.embedding_model = RAGConfig.DEFAULT_EMBEDDING_MODEL
 
     selected_embedding = st.sidebar.selectbox(
         "Embedding Model",
         embedding_models,
-        index=embedding_models.index(st.session_state.embedding_model)
+        index=embedding_models.index(
+            st.session_state.embedding_model) if st.session_state.embedding_model in embedding_models else 0
     )
 
     # Update embedding model if changed
@@ -59,8 +56,8 @@ def sidebar_component():
         if "rag_model" in st.session_state:
             try:
                 st.session_state.rag_model = RAGModel(
-                    model_name=st.session_state.llm_model,
-                    embedding_model=selected_embedding
+                    llm_model_name=st.session_state.llm_model,
+                    embedding_model_name=selected_embedding
                 )
                 st.sidebar.success(
                     f"Embedding model updated to {selected_embedding}")
@@ -70,9 +67,19 @@ def sidebar_component():
     # Chunking parameters
     st.sidebar.subheader("Chunking Configuration")
     chunk_size = st.sidebar.slider(
-        "Chunk Size", min_value=100, max_value=1000, value=400, step=50)
+        "Chunk Size",
+        min_value=100,
+        max_value=1000,
+        value=RAGConfig.DEFAULT_CHUNK_SIZE,
+        step=50
+    )
     chunk_overlap = st.sidebar.slider(
-        "Chunk Overlap", min_value=0, max_value=300, value=100, step=10)
+        "Chunk Overlap",
+        min_value=0,
+        max_value=300,
+        value=RAGConfig.DEFAULT_CHUNK_OVERLAP,
+        step=10
+    )
 
     # Apply chunking parameters if they've changed
     if "chunk_size" not in st.session_state or "chunk_overlap" not in st.session_state:
@@ -91,17 +98,6 @@ def sidebar_component():
             )
             st.sidebar.success("Chunking parameters updated")
 
-    # Database configuration
-    st.sidebar.subheader("Database Configuration")
-    db_path = st.sidebar.text_input("Database Path", value="./demo-rag-chroma")
-
-    # Apply database path if changed
-    if "db_path" not in st.session_state:
-        st.session_state.db_path = db_path
-    elif st.session_state.db_path != db_path:
-        st.session_state.db_path = db_path
-        if "rag_model" in st.session_state:
-            st.session_state.rag_model.db_path = db_path
-            st.sidebar.success("Database path updated")
-            st.sidebar.warning(
-                "You may need to restart the application for this change to take effect")
+    # Database information
+    st.sidebar.subheader("Database Information")
+    st.sidebar.info(f"Using database at: {RAGConfig.VECTORDB_PATH}")
