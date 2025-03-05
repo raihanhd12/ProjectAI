@@ -25,5 +25,8 @@ build/
 # Jupyter Notebook
 .ipynb_checkpoints
 
-vector-db/*
-!vector-db/.gitkeep
+db/vector/*
+!db/vector/.gitkeep
+
+db/chat-history*
+!db/chat-history.gitkeep
