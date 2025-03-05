@@ -25,12 +25,5 @@ build/
 # Jupyter Notebook
 .ipynb_checkpoints
 
-# Model caches
-models/summarization_cache/
-models/embeddings_cache/
-
-data/*
-!data/.gitkeep
-
-vectordb/*
-!vectordb/.gitkeep
+vector-db/*
+!vector-db/.gitkeep

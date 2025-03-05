@@ -1,24 +1,21 @@
 import streamlit as st
-from components.sidebar import sidebar_component
-from components.rag_chat import rag_chat_component
+from src.RAG.main import rag  # Importing rag() function for RAG
+from src.OCR.main import ocr  # Importing ocr() function for OCR
 
 
 def main():
-    """
-    Main application entry point.
-    """
-    # Configure the Streamlit page
-    st.set_page_config(
-        page_title="RAG Question Answer",
-        page_icon="📚",
-        layout="wide"
-    )
+    """Main application entry point."""
+    st.set_page_config(page_title="AI Tools", page_icon="🔧", layout="wide")
 
-    # Set up sidebar for configuration
-    sidebar_component()
+    # Sidebar for selecting tool
+    st.sidebar.title("Select Tool")
+    tool = st.sidebar.radio(
+        "Choose a tool:", ["RAG Question Answer", "OCR (Image to Text)"])
 
-    # Main RAG chat interface
-    rag_chat_component()
+    if tool == "RAG Question Answer":
+        rag()  # Call the RAG tool function
+    elif tool == "OCR (Image to Text)":
+        ocr()  # Call the OCR tool function
 
 
 if __name__ == "__main__":
