@@ -9,7 +9,7 @@ from components.summarizer import text_summarizer_app
 from components.other_tools import other_tools_app
 
 # Import models
-from models.rag import LocalRAG
+from models.rag import ImprovedRAG
 
 # Import utilities
 from utils.chat_history import ChatHistory
@@ -32,50 +32,52 @@ def initialize_session_state():
     # Initialize embedding_model in session state if not present
     if "embedding_model" not in st.session_state:
         st.session_state.embedding_model = "sentence-transformers/all-MiniLM-L6-v2"
-        
+
     # Initialize llm_model in session state if not present
     if "llm_model" not in st.session_state:
         st.session_state.llm_model = "qwen2.5"
-    
+
     # Initialize RAG system (always needed for RAG chat)
     if "rag_system" not in st.session_state:
         try:
-            st.session_state.rag_system = LocalRAG(
-                db_dir=DB_DIR, 
+            st.session_state.rag_system = ImprovedRAG(  # Changed from LocalRAG
+                db_dir=DB_DIR,
                 data_dir=DATA_DIR,
                 embedding_model_name=st.session_state.embedding_model,
-                model_name=st.session_state.llm_model
+                llm_model_name=st.session_state.llm_model  # Changed from model_name
             )
         except Exception as e:
             st.error(f"Error initializing RAG system: {str(e)}")
-            st.info("Please check that Ollama is running and the required models are available.")
-    
+            st.info(
+                "Please check that Ollama is running and the required models are available.")
+
     # Note: Summarizer will be initialized on demand in the component
     # to avoid loading all models at startup
-    
+
     # Initialize chat history and conversation state
     if "chat_history" not in st.session_state:
         st.session_state.chat_history = {}
-    
+
     # Initialize app mode first
     if "app_mode" not in st.session_state:
         st.session_state.app_mode = APP_MODES[0]
-    
+
     # Then handle current conversation based on app mode
     if "current_conversation_id" not in st.session_state:
         # Find an existing conversation for the current app mode
         history = ChatHistory.load_history()
         matching_conversations = [
-            conv_id for conv_id, data in history.items() 
+            conv_id for conv_id, data in history.items()
             if data.get("app_mode") == st.session_state.app_mode
         ]
-        
+
         if matching_conversations:
             # Use the most recent existing conversation for this app mode
             st.session_state.current_conversation_id = matching_conversations[0]
         else:
             # Create a new conversation for this app mode
-            conversation_id = ChatHistory.add_conversation(app_mode=st.session_state.app_mode)
+            conversation_id = ChatHistory.add_conversation(
+                app_mode=st.session_state.app_mode)
             st.session_state.current_conversation_id = conversation_id
 
 
@@ -87,14 +89,14 @@ def main():
         layout="wide",
         initial_sidebar_state="expanded"
     )
-    
+
     try:
         # Initialize session state
         initialize_session_state()
-        
+
         # Display sidebar with DB_DIR and DATA_DIR parameters
         display_sidebar(APP_MODES, DB_DIR, DATA_DIR)
-        
+
         # Display the selected app
         if st.session_state.app_mode == "RAG Chat":
             rag_chat_app()
