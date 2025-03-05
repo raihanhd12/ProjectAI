@@ -1,113 +1,57 @@
-import os
 import streamlit as st
-import traceback
+from components.sidebar import sidebar_menu
+from components.home import home_page
+from components.rag_chat import rag_chat_page
 
-# Import components
-from components.sidebar import display_sidebar
-from components.rag_chat import rag_chat_app
-from components.summarizer import text_summarizer_app
-from components.other_tools import other_tools_app
-
-# Import models
-from models.rag import StreamlinedRAG
-
-# Import utilities
-from utils.chat_history import ChatHistory
-
-# App configuration
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DATA_DIR = os.path.join(BASE_DIR, "data")
-DB_DIR = os.path.join(BASE_DIR, "vectordb")
-
-# Create necessary directories
-os.makedirs(DATA_DIR, exist_ok=True)
-os.makedirs(DB_DIR, exist_ok=True)
-
-# App modes
-APP_MODES = ["RAG Chat", "Text Summarizer", "Other Tools"]
-
-
-def initialize_session_state():
-    """Initialize session state variables."""
-    # Initialize embedding_model in session state if not present
-    if "embedding_model" not in st.session_state:
-        st.session_state.embedding_model = "nomic-embed-text"
-
-    # Initialize llm_model in session state if not present
-    if "llm_model" not in st.session_state:
-        st.session_state.llm_model = "llama3"
-
-    # Initialize RAG system (always needed for RAG chat)
-    if "rag_system" not in st.session_state:
-        try:
-            st.session_state.rag_system = StreamlinedRAG(
-                db_dir=DB_DIR,
-                data_dir=DATA_DIR,
-                embedding_model_name=st.session_state.embedding_model,
-                llm_model_name=st.session_state.llm_model
-            )
-        except Exception as e:
-            st.error(f"Error initializing RAG system: {str(e)}")
-            st.info(
-                "Please check that Ollama is running and the required models are available.")
-
-    # Note: Summarizer will be initialized on demand in the component
-    # to avoid loading all models at startup
-
-    # Initialize chat history and conversation state
-    if "chat_history" not in st.session_state:
-        st.session_state.chat_history = {}
-
-    # Initialize app mode first
-    if "app_mode" not in st.session_state:
-        st.session_state.app_mode = APP_MODES[0]
-
-    # Then handle current conversation based on app mode
-    if "current_conversation_id" not in st.session_state:
-        # Find an existing conversation for the current app mode
-        history = ChatHistory.load_history()
-        matching_conversations = [
-            conv_id for conv_id, data in history.items()
-            if data.get("app_mode") == st.session_state.app_mode
-        ]
-
-        if matching_conversations:
-            # Use the most recent existing conversation for this app mode
-            st.session_state.current_conversation_id = matching_conversations[0]
-        else:
-            # Create a new conversation for this app mode
-            conversation_id = ChatHistory.add_conversation(
-                app_mode=st.session_state.app_mode)
-            st.session_state.current_conversation_id = conversation_id
+# Define application constants
+DB_DIR = "./vectordb"
+DATA_DIR = "./data"
 
 
 def main():
-    """Main application entry point."""
+    """
+    Main application entry point with multi-tool navigation.
+    """
+    # Configure the Streamlit page
     st.set_page_config(
-        page_title="AI Assistant",
+        page_title="AI Assistant Platform",
         page_icon="🤖",
         layout="wide",
         initial_sidebar_state="expanded"
     )
 
-    try:
-        # Initialize session state
-        initialize_session_state()
+    # Initialize session states for application
+    if "app_mode" not in st.session_state:
+        st.session_state.app_mode = "Home"
 
-        # Display sidebar with DB_DIR and DATA_DIR parameters
-        display_sidebar(APP_MODES, DB_DIR, DATA_DIR)
+    if "llm_model" not in st.session_state:
+        st.session_state.llm_model = "llama3"
 
-        # Display the selected app
-        if st.session_state.app_mode == "RAG Chat":
-            rag_chat_app()
-        elif st.session_state.app_mode == "Text Summarizer":
-            text_summarizer_app()
-        else:
-            other_tools_app()
-    except Exception as e:
-        st.error("An error occurred while loading the application:")
-        st.code(traceback.format_exc())
-        st.info("Try refreshing the page or restarting the application.")
+    if "embedding_model" not in st.session_state:
+        st.session_state.embedding_model = "nomic-embed-text"
+
+    if "current_conversation_id" not in st.session_state:
+        st.session_state.current_conversation_id = None
+
+    if "show_settings" not in st.session_state:
+        st.session_state.show_settings = False
+
+    # Available application modes
+    app_modes = ["Home", "RAG Chat", "Summarizer"]
+
+    # Set up sidebar navigation
+    sidebar_menu(app_modes, DB_DIR, DATA_DIR)
+
+    # Display selected application mode
+    if st.session_state.app_mode == "Home":
+        home_page()
+    elif st.session_state.app_mode == "RAG Chat":
+        rag_chat_page(DB_DIR, DATA_DIR)
+    # Add other tools here as elif statements
+
+    # Add footer
+    st.sidebar.markdown("---")
+    st.sidebar.caption("© 2025 AI Assistant Platform")
 
 
 if __name__ == "__main__":

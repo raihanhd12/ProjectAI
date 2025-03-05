@@ -1,57 +1,77 @@
 import streamlit as st
 from utils.chat_history import ChatHistory
-
-# Add necessary imports
-from langchain_ollama import OllamaLLM
-from models.rag import StreamlinedRAG  # Import LocalRAG directly
+from models.rag import RAGModel  # Import the RAG model
 
 
-def display_sidebar(app_modes, DB_DIR, DATA_DIR):
+def sidebar_menu(app_modes, DB_DIR, DATA_DIR):
     """
-    Display the sidebar with app controls and chat history.
+    Display the sidebar with app navigation and chat history.
 
     Args:
         app_modes: List of available application modes
         DB_DIR: Directory for vector database
         DATA_DIR: Directory for data files
     """
+    # Logo and title
+    st.sidebar.image(
+        "https://via.placeholder.com/100x100.png?text=AI", width=100)
     st.sidebar.title("AI Assistant")
+    st.sidebar.markdown("---")
 
-    # Initialize embedding_model in session state if not present
-    if "embedding_model" not in st.session_state:
-        st.session_state.embedding_model = "sentence-transformers/all-MiniLM-L6-v2"
+    # Navigation menu
+    st.sidebar.subheader("Tools")
 
-    # Initialize llm_model in session state if not present
-    if "llm_model" not in st.session_state:
-        st.session_state.llm_model = "qwen2.5"
+    # Create buttons for each app mode with icons
+    icons = {
+        "Home": "🏠",
+        "RAG Chat": "💬",
+        "Summarizer": "📝",
+        # Add more tools with icons here
+    }
 
-    # App mode selection
-    selected_mode = st.sidebar.selectbox(
-        "Select Application",
-        app_modes,
-        index=app_modes.index(st.session_state.app_mode)
-    )
+    for mode in app_modes:
+        icon = icons.get(mode, "🔧")
+        if st.sidebar.button(f"{icon} {mode}", use_container_width=True,
+                             key=f"nav_{mode}",
+                             type="primary" if st.session_state.app_mode == mode else "secondary"):
+            # If changing to a new mode, create a new conversation for that mode
+            if mode != st.session_state.app_mode:
+                if mode != "Home":  # Don't create conversation for Home
+                    new_id = ChatHistory.add_conversation(app_mode=mode)
+                    st.session_state.current_conversation_id = new_id
+                st.session_state.app_mode = mode
+                st.session_state.show_settings = False  # Hide settings when switching
+                st.rerun()
 
-    if selected_mode != st.session_state.app_mode:
-        # Create a new conversation for the new app mode
-        new_id = ChatHistory.add_conversation(app_mode=selected_mode)
-        st.session_state.current_conversation_id = new_id
-        st.session_state.app_mode = selected_mode
-        st.rerun()
+    st.sidebar.markdown("---")
 
-    st.sidebar.divider()
+    # Display model info for reference
+    if st.session_state.app_mode != "Home":
+        st.sidebar.caption("Currently using:")
+        st.sidebar.caption(f"LLM: {st.session_state.llm_model}")
+        st.sidebar.caption(
+            f"Embeddings: {st.session_state.embedding_model.split('/')[-1]}")
+
+    # Only show chat history for chat-based tools
+    if st.session_state.app_mode == "RAG Chat":
+        display_chat_history()
+
+
+def display_chat_history():
+    """Display chat history for the current application mode"""
+    st.sidebar.markdown("---")
 
     # Chat history section
-    st.sidebar.subheader("Chat History")
+    st.sidebar.subheader("💾 Chat History")
 
     # New conversation button
-    if st.sidebar.button("New Conversation"):
+    if st.sidebar.button("➕ New Conversation", use_container_width=True, type="primary"):
         new_id = ChatHistory.add_conversation(
             app_mode=st.session_state.app_mode)
         st.session_state.current_conversation_id = new_id
         st.rerun()
 
-    # Display existing conversations FILTERED BY CURRENT APP MODE
+    # Display existing conversations filtered by current app mode
     history = ChatHistory.load_history()
 
     # Filter conversations by current app mode
@@ -60,18 +80,28 @@ def display_sidebar(app_modes, DB_DIR, DATA_DIR):
         if data.get("app_mode") == st.session_state.app_mode
     }
 
-    conversation_ids = list(filtered_conversations.keys())
+    # Sort conversations by creation time (newest first)
+    sorted_conversations = sorted(
+        filtered_conversations.items(),
+        key=lambda x: x[1].get("created_at", ""),
+        reverse=True
+    )
 
-    if conversation_ids:
-        for conv_id in conversation_ids:
+    if sorted_conversations:
+        for conv_id, data in sorted_conversations:
             col1, col2 = st.sidebar.columns([4, 1])
+
             with col1:
                 # Highlight the current conversation
                 is_current = st.session_state.current_conversation_id == conv_id
-                button_label = filtered_conversations[conv_id]["title"]
+                button_label = data["title"]
 
                 if is_current:
                     button_label = f"➤ {button_label}"
+
+                # Truncate very long titles
+                if len(button_label) > 25:
+                    button_label = button_label[:22] + "..."
 
                 if st.button(button_label, key=f"btn_{conv_id}"):
                     st.session_state.current_conversation_id = conv_id
@@ -81,94 +111,25 @@ def display_sidebar(app_modes, DB_DIR, DATA_DIR):
                 if st.button("🗑️", key=f"del_{conv_id}"):
                     ChatHistory.delete_conversation(conv_id)
                     if st.session_state.current_conversation_id == conv_id:
-                        if len(conversation_ids) > 1:
-                            # Set current to another conversation
-                            other_ids = [
-                                cid for cid in conversation_ids if cid != conv_id]
-                            st.session_state.current_conversation_id = other_ids[0]
+                        # After deleting, select another conversation
+                        if len(sorted_conversations) > 1:
+                            # Find next conversation to select
+                            next_conversations = [
+                                cid for cid, _ in sorted_conversations if cid != conv_id]
+                            if next_conversations:
+                                st.session_state.current_conversation_id = next_conversations[0]
                         else:
-                            # Create a new conversation
+                            # Create a new conversation if this was the last one
                             new_id = ChatHistory.add_conversation(
                                 app_mode=st.session_state.app_mode)
                             st.session_state.current_conversation_id = new_id
                     st.rerun()
     else:
-        st.sidebar.info("No conversations for this tool.")
+        st.sidebar.info("No conversations yet.")
 
-    # Display model information
-    st.sidebar.divider()
-    st.sidebar.caption("Model Information")
+    st.sidebar.markdown("---")
 
-    if hasattr(st.session_state, "rag_system"):
-        st.sidebar.caption(
-            f"LLM: {st.session_state.rag_system.llm_model_name}")
-        st.sidebar.caption(
-            f"Embeddings: {st.session_state.rag_system.embedding_model_name.split('/')[-1]}")
-
-    st.sidebar.divider()
-
-    # Model selection section
-    st.sidebar.subheader("Models Configuration")
-
-    # Embedding model selection - FIX: Include all models in the list
-# Embedding model selection
-    embedding_models = [
-        "sentence-transformers/all-MiniLM-L6-v2",  # HuggingFace model
-        "BAAI/bge-small-en-v1.5",                  # HuggingFace model
-        "intfloat/e5-small-v2",                    # HuggingFace model
-        # Ollama model (no sentence-transformers/ prefix)
-        "nomic-embed-text"
-    ]
-
-    selected_embedding = st.sidebar.selectbox(
-        "Embedding Model",
-        embedding_models,
-        index=embedding_models.index(
-            st.session_state.embedding_model) if st.session_state.embedding_model in embedding_models else 0
-    )
-
-    # And update the embedding model section
-    if selected_embedding != st.session_state.embedding_model:
-        st.session_state.embedding_model = selected_embedding
-        if "rag_system" in st.session_state:
-            # Reinitialize with new embedding model
-            try:
-                st.session_state.rag_system = StreamlinedRAG(  # Changed from LocalRAG
-                    db_dir=DB_DIR,
-                    data_dir=DATA_DIR,
-                    embedding_model_name=selected_embedding,
-                    llm_model_name=st.session_state.llm_model  # Changed from model_name
-                )
-                st.sidebar.success(
-                    f"Embedding model updated to {selected_embedding}")
-            except Exception as e:
-                st.sidebar.error(f"Error updating embedding model: {str(e)}")
-        st.rerun()
-
-    # LLM model selection
-    llm_models = [
-        "qwen2.5",
-        "qwen2.5-14b",
-        "llama3",
-        "mistral"
-    ]
-
-    selected_llm = st.sidebar.selectbox(
-        "LLM Model",
-        llm_models,
-        index=llm_models.index(
-            st.session_state.llm_model) if st.session_state.llm_model in llm_models else 0
-    )
-
-    # Then update the LLM model updating section
-    if selected_llm != st.session_state.llm_model:
-        st.session_state.llm_model = selected_llm
-        if "rag_system" in st.session_state:
-            # Update LLM model
-            try:
-                # No need to initialize OllamaLLM separately, just update model_name
-                st.session_state.rag_system.llm_model_name = selected_llm
-                st.sidebar.success(f"LLM model updated to {selected_llm}")
-            except Exception as e:
-                st.sidebar.error(f"Error updating LLM model: {str(e)}")
+    # Model selection toggle
+    if st.sidebar.button("⚙️ Settings", use_container_width=True):
+        st.session_state.show_settings = not st.session_state.show_settings
         st.rerun()

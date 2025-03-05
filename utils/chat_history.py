@@ -1,154 +1,132 @@
-import os
 import json
+import os
 import uuid
-import datetime
-
-# Chat history file path
-CHAT_HISTORY_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "chat_history.json")
+from datetime import datetime
 
 
 class ChatHistory:
-    @staticmethod
-    def load_history():
-        """
-        Load chat history from file.
-        
-        Returns:
-            Dictionary containing conversation history
-        """
-        if os.path.exists(CHAT_HISTORY_FILE):
+    """
+    Utility class to manage chat history persistently across sessions.
+    """
+    HISTORY_FILE = "chat_history.json"
+
+    @classmethod
+    def load_history(cls):
+        """Load chat history from file or create empty history"""
+        if os.path.exists(cls.HISTORY_FILE):
             try:
-                with open(CHAT_HISTORY_FILE, "r") as f:
+                with open(cls.HISTORY_FILE, "r") as f:
                     return json.load(f)
-            except Exception:
+            except (json.JSONDecodeError, IOError) as e:
+                print(f"Error loading chat history: {e}")
                 return {}
         return {}
-    
-    @staticmethod
-    def save_history(history):
+
+    @classmethod
+    def save_history(cls, history):
+        """Save chat history to file"""
+        try:
+            with open(cls.HISTORY_FILE, "w") as f:
+                json.dump(history, f, indent=2)
+        except IOError as e:
+            print(f"Error saving chat history: {e}")
+
+    @classmethod
+    def add_conversation(cls, title=None, app_mode="rag_chat"):
         """
-        Save chat history to file.
-        
-        Args:
-            history: Dictionary containing conversation history
-        """
-        with open(CHAT_HISTORY_FILE, "w") as f:
-            json.dump(history, f)
-    
-    @staticmethod
-    def add_conversation(title=None, app_mode="RAG Chat"):
-        """
-        Add a new conversation to the history.
-        
+        Create a new conversation entry in history.
+
         Args:
             title: Optional title for the conversation
-            app_mode: The application mode for this conversation
-            
+            app_mode: Application mode for this conversation
+
         Returns:
-            The new conversation ID
+            String ID of the new conversation
         """
-        history = ChatHistory.load_history()
+        history = cls.load_history()
+
+        # Generate a unique ID
         conversation_id = str(uuid.uuid4())
-        
+
+        # Create default title if none provided
         if not title:
-            title = f"Conversation {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')}"
-        
+            current_time = datetime.now().strftime("%b %d, %Y %I:%M %p")
+            title = f"Conversation {current_time}"
+
+        # Add conversation to history
         history[conversation_id] = {
             "title": title,
+            "created_at": datetime.now().isoformat(),
             "messages": [],
-            "timestamp": datetime.datetime.now().isoformat(),
             "app_mode": app_mode
         }
-        
-        ChatHistory.save_history(history)
+
+        cls.save_history(history)
+        return conversation_id_history(history)
         return conversation_id
-    
-    @staticmethod
-    def add_message(conversation_id, role, content, metadata=None):
+
+    @classmethod
+    def delete_conversation(cls, conversation_id):
+        """Delete a conversation from history"""
+        history = cls.load_history()
+        if conversation_id in history:
+            del history[conversation_id]
+            cls.save_history(history)
+            return True
+        return False
+
+    @classmethod
+    def get_messages(cls, conversation_id):
+        """Get all messages for a specific conversation"""
+        history = cls.load_history()
+        if conversation_id in history:
+            return history[conversation_id].get("messages", [])
+        return []
+
+    @classmethod
+    def add_message(cls, conversation_id, role, content, metadata=None):
         """
         Add a message to a conversation.
-        
+
         Args:
-            conversation_id: The conversation ID
-            role: The role of the message sender ("user" or "assistant")
-            content: The message content
+            conversation_id: ID of the conversation
+            role: Role of the message sender ("user" or "assistant")
+            content: Content of the message
             metadata: Optional metadata for the message
+
+        Returns:
+            Boolean indicating success or failure
         """
-        history = ChatHistory.load_history()
-        
+        history = cls.load_history()
+
         if conversation_id not in history:
-            conversation_id = ChatHistory.add_conversation()
-        
+            return False
+
+        # Create message object
         message = {
             "role": role,
             "content": content,
-            "timestamp": datetime.datetime.now().isoformat()
+            "timestamp": datetime.now().isoformat()
         }
-        
+
+        # Add metadata if provided
         if metadata:
-            message.update(metadata)
-        
+            for key, value in metadata.items():
+                message[key] = value
+
+        # Add to messages list
         history[conversation_id]["messages"].append(message)
-        
-        ChatHistory.save_history(history)
-    
-    @staticmethod
-    def get_messages(conversation_id):
-        """
-        Get all messages for a conversation.
-        
-        Args:
-            conversation_id: The conversation ID
-            
-        Returns:
-            List of messages for the conversation
-        """
-        history = ChatHistory.load_history()
-        
-        if conversation_id in history:
-            return history[conversation_id]["messages"]
-        
-        return []
-    
-    @staticmethod
-    def delete_conversation(conversation_id):
-        """
-        Delete a conversation from history.
-        
-        Args:
-            conversation_id: The conversation ID
-            
-        Returns:
-            True if conversation was deleted, False otherwise
-        """
-        history = ChatHistory.load_history()
-        
-        if conversation_id in history:
-            del history[conversation_id]
-            ChatHistory.save_history(history)
-            return True
-        
-        return False
-    
-    @staticmethod
-    def update_message(conversation_id, message_index, updated_content):
-        """
-        Update an existing message in a conversation.
-        
-        Args:
-            conversation_id: The conversation ID
-            message_index: The index of the message to update
-            updated_content: The new content for the message
-            
-        Returns:
-            True if message was updated, False otherwise
-        """
-        history = ChatHistory.load_history()
-        
-        if conversation_id in history:
-            if 0 <= message_index < len(history[conversation_id]["messages"]):
-                history[conversation_id]["messages"][message_index]["content"] = updated_content
-                ChatHistory.save_history(history)
-                return True
-        
-        return False
+
+        # Update title to first user message if it's a default title
+        if (role == "user" and
+            history[conversation_id]["title"].startswith("Conversation ") and
+                len(history[conversation_id]["messages"]) <= 2):
+            # Truncate long messages
+            if len(content) > 40:
+                title = content[:37] + "..."
+            else:
+                title = content
+            history[conversation_id]["title"] = title
+
+        cls.save_history(history)
+        return True
