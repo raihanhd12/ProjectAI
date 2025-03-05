@@ -16,7 +16,7 @@ from streamlit.runtime.uploaded_file_manager import UploadedFile
 class RAGModel:
     def __init__(
         self,
-        llm_model_name="llama3.2:3b",
+        llm_model_name="llama3",
         embedding_model_name="nomic-embed-text:latest",
         db_dir="./demo-rag-chroma",
         data_dir=None,

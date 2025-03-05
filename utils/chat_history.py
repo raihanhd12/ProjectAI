@@ -62,7 +62,6 @@ class ChatHistory:
         }
 
         cls.save_history(history)
-        return conversation_id_history(history)
         return conversation_id
 
     @classmethod

@@ -1,135 +1,107 @@
 import streamlit as st
-from utils.chat_history import ChatHistory
-from models.rag import RAGModel  # Import the RAG model
+from models.rag import RAGModel
 
 
-def sidebar_menu(app_modes, DB_DIR, DATA_DIR):
+def sidebar_component():
     """
-    Display the sidebar with app navigation and chat history.
-
-    Args:
-        app_modes: List of available application modes
-        DB_DIR: Directory for vector database
-        DATA_DIR: Directory for data files
+    Sidebar component for model selection and configuration
     """
-    # Logo and title
-    st.sidebar.image(
-        "https://via.placeholder.com/100x100.png?text=AI", width=100)
-    st.sidebar.title("AI Assistant")
-    st.sidebar.markdown("---")
+    st.sidebar.title("RAG Question Answer")
 
-    # Navigation menu
-    st.sidebar.subheader("Tools")
+    # Model selection section
+    st.sidebar.subheader("Model Configuration")
 
-    # Create buttons for each app mode with icons
-    icons = {
-        "Home": "🏠",
-        "RAG Chat": "💬",
-        "Summarizer": "📝",
-        # Add more tools with icons here
-    }
+    # LLM model selection
+    llm_models = [
+        "llama3",
+        "qwen2.5"
+    ]
 
-    for mode in app_modes:
-        icon = icons.get(mode, "🔧")
-        if st.sidebar.button(f"{icon} {mode}", use_container_width=True,
-                             key=f"nav_{mode}",
-                             type="primary" if st.session_state.app_mode == mode else "secondary"):
-            # If changing to a new mode, create a new conversation for that mode
-            if mode != st.session_state.app_mode:
-                if mode != "Home":  # Don't create conversation for Home
-                    new_id = ChatHistory.add_conversation(app_mode=mode)
-                    st.session_state.current_conversation_id = new_id
-                st.session_state.app_mode = mode
-                st.session_state.show_settings = False  # Hide settings when switching
-                st.rerun()
+    # Initialize session state for model if not present
+    if "llm_model" not in st.session_state:
+        st.session_state.llm_model = llm_models[0]
 
-    st.sidebar.markdown("---")
-
-    # Display model info for reference
-    if st.session_state.app_mode != "Home":
-        st.sidebar.caption("Currently using:")
-        st.sidebar.caption(f"LLM: {st.session_state.llm_model}")
-        st.sidebar.caption(
-            f"Embeddings: {st.session_state.embedding_model.split('/')[-1]}")
-
-    # Only show chat history for chat-based tools
-    if st.session_state.app_mode == "RAG Chat":
-        display_chat_history()
-
-
-def display_chat_history():
-    """Display chat history for the current application mode"""
-    st.sidebar.markdown("---")
-
-    # Chat history section
-    st.sidebar.subheader("💾 Chat History")
-
-    # New conversation button
-    if st.sidebar.button("➕ New Conversation", use_container_width=True, type="primary"):
-        new_id = ChatHistory.add_conversation(
-            app_mode=st.session_state.app_mode)
-        st.session_state.current_conversation_id = new_id
-        st.rerun()
-
-    # Display existing conversations filtered by current app mode
-    history = ChatHistory.load_history()
-
-    # Filter conversations by current app mode
-    filtered_conversations = {
-        conv_id: data for conv_id, data in history.items()
-        if data.get("app_mode") == st.session_state.app_mode
-    }
-
-    # Sort conversations by creation time (newest first)
-    sorted_conversations = sorted(
-        filtered_conversations.items(),
-        key=lambda x: x[1].get("created_at", ""),
-        reverse=True
+    selected_model = st.sidebar.selectbox(
+        "Language Model",
+        llm_models,
+        index=llm_models.index(st.session_state.llm_model)
     )
 
-    if sorted_conversations:
-        for conv_id, data in sorted_conversations:
-            col1, col2 = st.sidebar.columns([4, 1])
+    # Update model if changed
+    if selected_model != st.session_state.llm_model:
+        st.session_state.llm_model = selected_model
+        # Update model in RAG instance if it exists
+        if "rag_model" in st.session_state:
+            st.session_state.rag_model.model_name = selected_model
+            st.sidebar.success(f"Model updated to {selected_model}")
 
-            with col1:
-                # Highlight the current conversation
-                is_current = st.session_state.current_conversation_id == conv_id
-                button_label = data["title"]
+    # Embedding model selection
+    embedding_models = [
+        "nomic-embed-text:latest",
+        "nomic-embed-text",
+        "all-MiniLM-L6-v2"
+    ]
 
-                if is_current:
-                    button_label = f"➤ {button_label}"
+    # Initialize session state for embedding model if not present
+    if "embedding_model" not in st.session_state:
+        st.session_state.embedding_model = embedding_models[0]
 
-                # Truncate very long titles
-                if len(button_label) > 25:
-                    button_label = button_label[:22] + "..."
+    selected_embedding = st.sidebar.selectbox(
+        "Embedding Model",
+        embedding_models,
+        index=embedding_models.index(st.session_state.embedding_model)
+    )
 
-                if st.button(button_label, key=f"btn_{conv_id}"):
-                    st.session_state.current_conversation_id = conv_id
-                    st.rerun()
+    # Update embedding model if changed
+    if selected_embedding != st.session_state.embedding_model:
+        st.session_state.embedding_model = selected_embedding
+        # Reset RAG model instance to use new embedding model
+        if "rag_model" in st.session_state:
+            try:
+                st.session_state.rag_model = RAGModel(
+                    model_name=st.session_state.llm_model,
+                    embedding_model=selected_embedding
+                )
+                st.sidebar.success(
+                    f"Embedding model updated to {selected_embedding}")
+            except Exception as e:
+                st.sidebar.error(f"Error updating embedding model: {str(e)}")
 
-            with col2:
-                if st.button("🗑️", key=f"del_{conv_id}"):
-                    ChatHistory.delete_conversation(conv_id)
-                    if st.session_state.current_conversation_id == conv_id:
-                        # After deleting, select another conversation
-                        if len(sorted_conversations) > 1:
-                            # Find next conversation to select
-                            next_conversations = [
-                                cid for cid, _ in sorted_conversations if cid != conv_id]
-                            if next_conversations:
-                                st.session_state.current_conversation_id = next_conversations[0]
-                        else:
-                            # Create a new conversation if this was the last one
-                            new_id = ChatHistory.add_conversation(
-                                app_mode=st.session_state.app_mode)
-                            st.session_state.current_conversation_id = new_id
-                    st.rerun()
-    else:
-        st.sidebar.info("No conversations yet.")
+    # Chunking parameters
+    st.sidebar.subheader("Chunking Configuration")
+    chunk_size = st.sidebar.slider(
+        "Chunk Size", min_value=100, max_value=1000, value=400, step=50)
+    chunk_overlap = st.sidebar.slider(
+        "Chunk Overlap", min_value=0, max_value=300, value=100, step=10)
 
-    st.sidebar.markdown("---")
+    # Apply chunking parameters if they've changed
+    if "chunk_size" not in st.session_state or "chunk_overlap" not in st.session_state:
+        st.session_state.chunk_size = chunk_size
+        st.session_state.chunk_overlap = chunk_overlap
+    elif st.session_state.chunk_size != chunk_size or st.session_state.chunk_overlap != chunk_overlap:
+        st.session_state.chunk_size = chunk_size
+        st.session_state.chunk_overlap = chunk_overlap
+        if "rag_model" in st.session_state:
+            st.session_state.rag_model.chunk_size = chunk_size
+            st.session_state.rag_model.chunk_overlap = chunk_overlap
+            st.session_state.rag_model.text_splitter = RecursiveCharacterTextSplitter(
+                chunk_size=chunk_size,
+                chunk_overlap=chunk_overlap,
+                separators=["\n\n", "\n", ".", "?", "!", " ", ""],
+            )
+            st.sidebar.success("Chunking parameters updated")
 
-    # Model selection toggle
-    if st.sidebar.button("⚙️ Settings", use_container_width=True):
-        st.session_state.show_settings = not st.session_state.show_settings
-        st.rerun()
+    # Database configuration
+    st.sidebar.subheader("Database Configuration")
+    db_path = st.sidebar.text_input("Database Path", value="./demo-rag-chroma")
+
+    # Apply database path if changed
+    if "db_path" not in st.session_state:
+        st.session_state.db_path = db_path
+    elif st.session_state.db_path != db_path:
+        st.session_state.db_path = db_path
+        if "rag_model" in st.session_state:
+            st.session_state.rag_model.db_path = db_path
+            st.sidebar.success("Database path updated")
+            st.sidebar.warning(
+                "You may need to restart the application for this change to take effect")
