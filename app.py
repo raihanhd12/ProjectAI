@@ -31,20 +31,20 @@ def initialize_session_state():
     """Initialize session state variables."""
     # Initialize embedding_model in session state if not present
     if "embedding_model" not in st.session_state:
-        st.session_state.embedding_model = "sentence-transformers/all-MiniLM-L6-v2"
+        st.session_state.embedding_model = "nomic-embed-text"
 
     # Initialize llm_model in session state if not present
     if "llm_model" not in st.session_state:
-        st.session_state.llm_model = "qwen2.5"
+        st.session_state.llm_model = "llama3"
 
     # Initialize RAG system (always needed for RAG chat)
     if "rag_system" not in st.session_state:
         try:
-            st.session_state.rag_system = ImprovedRAG(  # Changed from LocalRAG
+            st.session_state.rag_system = StreamlinedRAG(
                 db_dir=DB_DIR,
                 data_dir=DATA_DIR,
                 embedding_model_name=st.session_state.embedding_model,
-                llm_model_name=st.session_state.llm_model  # Changed from model_name
+                llm_model_name=st.session_state.llm_model
             )
         except Exception as e:
             st.error(f"Error initializing RAG system: {str(e)}")

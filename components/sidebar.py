@@ -3,7 +3,7 @@ from utils.chat_history import ChatHistory
 
 # Add necessary imports
 from langchain_ollama import OllamaLLM
-from models.rag import ImprovedRAG  # Import LocalRAG directly
+from models.rag import StreamlinedRAG  # Import LocalRAG directly
 
 
 def display_sidebar(app_modes, DB_DIR, DATA_DIR):
@@ -133,7 +133,7 @@ def display_sidebar(app_modes, DB_DIR, DATA_DIR):
         if "rag_system" in st.session_state:
             # Reinitialize with new embedding model
             try:
-                st.session_state.rag_system = ImprovedRAG(  # Changed from LocalRAG
+                st.session_state.rag_system = StreamlinedRAG(  # Changed from LocalRAG
                     db_dir=DB_DIR,
                     data_dir=DATA_DIR,
                     embedding_model_name=selected_embedding,
