@@ -9,7 +9,7 @@ from components.summarizer import text_summarizer_app
 from components.other_tools import other_tools_app
 
 # Import models
-from models.rag import ImprovedRAG
+from models.rag import StreamlinedRAG
 
 # Import utilities
 from utils.chat_history import ChatHistory

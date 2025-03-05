@@ -100,7 +100,8 @@ def display_sidebar(app_modes, DB_DIR, DATA_DIR):
     st.sidebar.caption("Model Information")
 
     if hasattr(st.session_state, "rag_system"):
-        st.sidebar.caption(f"LLM: {st.session_state.rag_system.model_name}")
+        st.sidebar.caption(
+            f"LLM: {st.session_state.rag_system.llm_model_name}")
         st.sidebar.caption(
             f"Embeddings: {st.session_state.rag_system.embedding_model_name.split('/')[-1]}")
 
@@ -126,6 +127,7 @@ def display_sidebar(app_modes, DB_DIR, DATA_DIR):
             st.session_state.embedding_model) if st.session_state.embedding_model in embedding_models else 0
     )
 
+    # And update the embedding model section
     if selected_embedding != st.session_state.embedding_model:
         st.session_state.embedding_model = selected_embedding
         if "rag_system" in st.session_state:
@@ -158,6 +160,7 @@ def display_sidebar(app_modes, DB_DIR, DATA_DIR):
             st.session_state.llm_model) if st.session_state.llm_model in llm_models else 0
     )
 
+    # Then update the LLM model updating section
     if selected_llm != st.session_state.llm_model:
         st.session_state.llm_model = selected_llm
         if "rag_system" in st.session_state:
