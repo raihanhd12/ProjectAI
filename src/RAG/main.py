@@ -305,7 +305,7 @@ class RAGModel:
 
         # Initialize cross-encoder model
         self.encoder_model = CrossEncoder(
-            "cross-encoder/ms-marco-MiniLM-L-6-v2")
+            "cross-encoder/ms-marco-MiniLM-L-12-v2")
 
     def get_vector_collection(self):
         """Gets or creates a ChromaDB collection for vector storage."""
