@@ -31,5 +31,6 @@ db/vector/*
 db/chat-history*
 !db/chat-history.gitkeep
 
-src/OCR/ktp/*
-!src/OCR/ktp/.gitkeep
+src/OCR
+
+

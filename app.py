@@ -1,10 +1,11 @@
+from src.RAG.main import rag
+from src.OCR.main import ocr
 import streamlit as st
-from src.RAG.main import rag  # Import your RAG component
-# Import other components as needed
-# from src.OCR.main import ocr  # Example
 
-# Set up page config
+# Set up page config as the first Streamlit command
 st.set_page_config(page_title="AI Document Assistant", layout="wide")
+
+# Import components
 
 
 def main():
@@ -29,9 +30,9 @@ def main():
             # Save state before rerun
             st.rerun()
 
-        # Add other navigation buttons as needed
+        # # OCR navigation button
         # if st.button("📷 OCR Tools", use_container_width=True,
-        #             type="primary" if st.session_state.current_page == "ocr" else "secondary"):
+        #              type="primary" if st.session_state.current_page == "ocr" else "secondary"):
         #     st.session_state.current_page = "ocr"
         #     st.rerun()
 
@@ -79,17 +80,19 @@ def home_page():
             st.session_state.current_page = "rag"
             st.rerun()
 
-    with col2:
-        st.info("### 📷 OCR Tools (Coming Soon)")
-        st.markdown("""
-        - Upload images or scanned documents
-        - Extract text using optical character recognition
-        - Process and analyze extracted text
-        - Save results in various formats
-        """)
+    # with col2:
+    #     st.info("### 📷 OCR Tools (Coming Soon)")
+    #     st.markdown("""
+    #     - Upload images or scanned documents
+    #     - Extract text using optical character recognition
+    #     - Process and analyze extracted text
+    #     - Save results in various formats
+    #     """)
 
-        # Disabled button for OCR
-        st.button("Coming Soon", use_container_width=True, disabled=True)
+    #     # Button to go to OCR page
+    #     if st.button("Go to OCR Tools", use_container_width=True):
+    #         st.session_state.current_page = "ocr"
+    #         st.rerun()
 
     # Usage tips
     st.subheader("Getting Started")

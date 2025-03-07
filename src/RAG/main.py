@@ -282,12 +282,11 @@ def delete_chat_session(session_id):
 
 
 class RAGModel:
-    def __init__(self, llm_model_name=DEFAULT_LLM_MODEL, embedding_model_name=DEFAULT_EMBEDDING_MODEL, db_dir=VECTORDB_PATH, data_dir=None, collection_name="rag_app", chunk_size=DEFAULT_CHUNK_SIZE, chunk_overlap=DEFAULT_CHUNK_OVERLAP, k_retrieval=10):
+    def __init__(self, llm_model_name=DEFAULT_LLM_MODEL, embedding_model_name=DEFAULT_EMBEDDING_MODEL, db_dir=VECTORDB_PATH, collection_name="rag_app", chunk_size=DEFAULT_CHUNK_SIZE, chunk_overlap=DEFAULT_CHUNK_OVERLAP, k_retrieval=10):
         """Initialize RAG model with specified parameters"""
         self.llm_model_name = llm_model_name
         self.embedding_model_name = embedding_model_name
         self.db_dir = db_dir
-        self.data_dir = data_dir or "./data"
         self.collection_name = collection_name
         self.k_retrieval = k_retrieval
         self.chunk_size = chunk_size
