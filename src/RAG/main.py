@@ -171,6 +171,54 @@ def save_document(name, chunks):
         st.error(f"Error saving document: {e}")
         return False
 
+
+# Delete document from DB
+
+def delete_document(doc_name):
+    """Deletes a document from the database and vector store."""
+    try:
+        # 1. Delete from SQLite DB
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        c.execute("DELETE FROM documents WHERE name = ?", (doc_name,))
+        conn.commit()
+        conn.close()
+
+        # 2. Delete from vector store
+        collection = RAGModel().get_vector_collection()
+        if collection:
+            # Print all IDs for debugging
+            try:
+                all_data = collection.get()
+                all_ids = all_data["ids"]
+                all_metadatas = all_data["metadatas"]
+
+                # Find document IDs by looking at metadata
+                doc_ids = []
+                for i, metadata in enumerate(all_metadatas):
+                    # Check if this metadata contains file information that matches our document
+                    source = metadata.get('source', '')
+                    if doc_name in source or doc_name == source:
+                        doc_ids.append(all_ids[i])
+
+                # If no matches by metadata, try prefix matching
+                if not doc_ids:
+                    normalize_doc_name = doc_name.translate(
+                        str.maketrans({"-": "_", ".": "_", " ": "_"}))
+                    doc_ids = [id for id in all_ids if id.startswith(
+                        f"{normalize_doc_name}_")]
+
+                # Delete the chunks
+                if doc_ids:
+                    collection.delete(ids=doc_ids)
+                    st.info(f"Deleted {len(doc_ids)} chunks from vector store")
+            except Exception as e:
+                st.warning(f"Vector store operation issue: {e}")
+
+        return True
+    except Exception as e:
+        st.error(f"Error deleting document: {str(e)}")
+        return False
 # Get chat history from DB
 
 
@@ -390,222 +438,312 @@ class RAGModel:
 
 def sidebar_component():
     """Sidebar component for RAG model."""
-    # Add home link
-    st.sidebar.markdown("#### [🏠 Home](/)")
-    st.sidebar.divider()
 
-    # Recent Chat History Section
-    st.sidebar.title("Recent Chats")
+    # Check current view from session state
+    current_view = st.session_state.get("rag_view", "documents")
 
-    # Get recent chat sessions
-    recent_sessions = get_recent_chat_sessions(5)  # Show last 5 sessions
+    # Display Recent Chats section only when in Chat view
+    if current_view == "chat":
+        # Recent Chat History Section
+        st.sidebar.title("Recent Chats")
 
-    if recent_sessions:
-        # Handle confirmation for deletion
-        if "delete_confirm" in st.session_state and st.session_state.delete_confirm:
-            session_to_delete = st.session_state.delete_confirm
-            # Find the question for this session
-            session_info = next(
-                (s for s in recent_sessions if s[0] == session_to_delete), None)
-            if session_info:
-                question = session_info[3]
-                preview = question if len(
-                    question) <= 30 else question[:27] + "..."
-                st.sidebar.warning(f"Delete chat: \"{preview}\"?")
-                col1, col2 = st.sidebar.columns(2)
+        # Get recent chat sessions
+        recent_sessions = get_recent_chat_sessions(5)  # Show last 5 sessions
+
+        if recent_sessions:
+            # Handle confirmation for deletion
+            if "delete_confirm" in st.session_state and st.session_state.delete_confirm:
+                session_to_delete = st.session_state.delete_confirm
+                # Find the question for this session
+                session_info = next(
+                    (s for s in recent_sessions if s[0] == session_to_delete), None)
+                if session_info:
+                    question = session_info[3]
+                    preview = question if len(
+                        question) <= 30 else question[:27] + "..."
+                    st.sidebar.warning(f"Delete chat: \"{preview}\"?")
+                    col1, col2 = st.sidebar.columns(2)
+                    with col1:
+                        if st.button("✓ Yes", key="confirm_yes"):
+                            success = delete_chat_session(session_to_delete)
+                            if success:
+                                st.sidebar.success("Chat deleted!")
+                                if st.session_state.session_id == session_to_delete:
+                                    # Current session was deleted, create a new one
+                                    st.session_state.session_id = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
+                            # Clear confirmation state
+                            st.session_state.delete_confirm = None
+                            st.rerun()
+                    with col2:
+                        if st.button("✗ No", key="confirm_no"):
+                            # Clear confirmation state
+                            st.session_state.delete_confirm = None
+                            st.rerun()
+                st.sidebar.divider()
+
+            # List all sessions with delete buttons
+            for session_id, start_time, last_time, first_question in recent_sessions:
+                # Format timestamps
+                try:
+                    last_time_dt = datetime.datetime.fromisoformat(last_time)
+                    formatted_time = last_time_dt.strftime("%d %b, %H:%M")
+                except (ValueError, TypeError):
+                    formatted_time = "Unknown time"
+
+                # Handle None or empty first question
+                if not first_question:
+                    first_question = "New conversation"
+
+                # Truncate first question if too long
+                preview = first_question if len(
+                    first_question) <= 40 else first_question[:37] + "..."
+
+                # Create two columns for session button and delete button
+                col1, col2 = st.sidebar.columns([5, 1])
+
+                # Session button in first column
                 with col1:
-                    if st.button("✓ Yes", key="confirm_yes"):
-                        success = delete_chat_session(session_to_delete)
-                        if success:
-                            st.sidebar.success("Chat deleted!")
-                            if st.session_state.session_id == session_to_delete:
-                                # Current session was deleted, create a new one
-                                st.session_state.session_id = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
-                        # Clear confirmation state
-                        st.session_state.delete_confirm = None
+                    if st.button(
+                        f"🗨️ {preview}\n📅 {formatted_time}",
+                        key=f"history_{session_id}",
+                        use_container_width=True
+                    ):
+                        # Switch to this session and reload
+                        st.session_state.session_id = session_id
                         st.rerun()
+
+                # Delete button in second column
                 with col2:
-                    if st.button("✗ No", key="confirm_no"):
-                        # Clear confirmation state
-                        st.session_state.delete_confirm = None
+                    st.write("")  # Add some spacing
+                    if st.button("🗑️", key=f"delete_{session_id}"):
+                        st.session_state.delete_confirm = session_id
                         st.rerun()
-            st.sidebar.divider()
+        else:
+            st.sidebar.info("No recent chats found")
 
-        # List all sessions with delete buttons
-        for session_id, start_time, last_time, first_question in recent_sessions:
-            # Format timestamps
-            try:
-                last_time_dt = datetime.datetime.fromisoformat(last_time)
-                formatted_time = last_time_dt.strftime("%d %b, %H:%M")
-            except (ValueError, TypeError):
-                formatted_time = "Unknown time"
+        # Add a button to start a new chat session
+        if st.sidebar.button("Start New Chat Session", type="primary", use_container_width=True):
+            # Generate a new session ID
+            st.session_state.session_id = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
+            st.rerun()
 
-            # Handle None or empty first question
-            if not first_question:
-                first_question = "New conversation"
+        st.sidebar.divider()
 
-            # Truncate first question if too long
-            preview = first_question if len(
-                first_question) <= 40 else first_question[:37] + "..."
-
-            # Create two columns for session button and delete button
-            col1, col2 = st.sidebar.columns([5, 1])
-
-            # Session button in first column
-            with col1:
-                if st.button(
-                    f"🗨️ {preview}\n📅 {formatted_time}",
-                    key=f"history_{session_id}",
-                    use_container_width=True
-                ):
-                    # Switch to this session and reload
-                    st.session_state.session_id = session_id
-                    st.rerun()
-
-            # Delete button in second column
-            with col2:
-                st.write("")  # Add some spacing
-                if st.button("🗑️", key=f"delete_{session_id}"):
-                    st.session_state.delete_confirm = session_id
-                    st.rerun()
-    else:
-        st.sidebar.info("No recent chats found")
-
-    st.sidebar.divider()
-
-    # Original RAG configuration
+    # RAG configuration section (shown in both views)
     st.sidebar.title("RAG Configuration")
 
-    # Model selection section
-    st.sidebar.subheader("Model Selection")
+    # Model selection section - AS EXPANDER
+    with st.sidebar.expander("Model Selection", expanded=True):
+        # LLM model selection using available models
+        llm_models = AVAILABLE_LLM_MODELS
+        if "llm_model" not in st.session_state:
+            st.session_state.llm_model = DEFAULT_LLM_MODEL
 
-    # LLM model selection using available models
-    llm_models = AVAILABLE_LLM_MODELS
-    if "llm_model" not in st.session_state:
-        st.session_state.llm_model = DEFAULT_LLM_MODEL
+        selected_model = st.selectbox(
+            "Language Model",
+            llm_models,
+            index=llm_models.index(
+                st.session_state.llm_model) if st.session_state.llm_model in llm_models else 0
+        )
 
-    selected_model = st.sidebar.selectbox(
-        "Language Model",
-        llm_models,
-        index=llm_models.index(
-            st.session_state.llm_model) if st.session_state.llm_model in llm_models else 0
-    )
+        # Update model if changed
+        if selected_model != st.session_state.llm_model:
+            st.session_state.llm_model = selected_model
+            if "rag_model" in st.session_state:
+                st.session_state.rag_model.llm_model_name = selected_model
+                st.success(f"Model updated to {selected_model}")
 
-    # Update model if changed
-    if selected_model != st.session_state.llm_model:
-        st.session_state.llm_model = selected_model
-        if "rag_model" in st.session_state:
-            st.session_state.rag_model.llm_model_name = selected_model
-            st.sidebar.success(f"Model updated to {selected_model}")
+        # Embedding model selection
+        embedding_models = AVAILABLE_EMBEDDING_MODELS
+        if "embedding_model" not in st.session_state:
+            st.session_state.embedding_model = DEFAULT_EMBEDDING_MODEL
 
-    # Embedding model selection
-    embedding_models = AVAILABLE_EMBEDDING_MODELS
-    if "embedding_model" not in st.session_state:
-        st.session_state.embedding_model = DEFAULT_EMBEDDING_MODEL
+        selected_embedding = st.selectbox(
+            "Embedding Model",
+            embedding_models,
+            index=embedding_models.index(
+                st.session_state.embedding_model) if st.session_state.embedding_model in embedding_models else 0
+        )
 
-    selected_embedding = st.sidebar.selectbox(
-        "Embedding Model",
-        embedding_models,
-        index=embedding_models.index(
-            st.session_state.embedding_model) if st.session_state.embedding_model in embedding_models else 0
-    )
+        # Update embedding model if changed
+        if selected_embedding != st.session_state.embedding_model:
+            st.session_state.embedding_model = selected_embedding
+            if "rag_model" in st.session_state:
+                try:
+                    st.session_state.rag_model = RAGModel(
+                        llm_model_name=st.session_state.llm_model,
+                        embedding_model_name=selected_embedding
+                    )
+                    st.success(
+                        f"Embedding model updated to {selected_embedding}")
+                except Exception as e:
+                    st.error(f"Error updating embedding model: {str(e)}")
 
-    # Update embedding model if changed
-    if selected_embedding != st.session_state.embedding_model:
-        st.session_state.embedding_model = selected_embedding
-        if "rag_model" in st.session_state:
-            try:
-                st.session_state.rag_model = RAGModel(
-                    llm_model_name=st.session_state.llm_model,
-                    embedding_model_name=selected_embedding
-                )
-                st.sidebar.success(
-                    f"Embedding model updated to {selected_embedding}")
-            except Exception as e:
-                st.sidebar.error(f"Error updating embedding model: {str(e)}")
+    # Model Settings - AS EXPANDER
+    with st.sidebar.expander("Model Settings", expanded=False):
+        # Chunking parameters
+        chunk_size = st.slider(
+            "Chunk Size",
+            min_value=100,
+            max_value=1000,
+            value=DEFAULT_CHUNK_SIZE,
+            step=50,
+            help="Size of text chunks for processing"
+        )
 
-    # Divider untuk memisahkan bagian model dari settings
-    st.sidebar.divider()
+        chunk_overlap = st.slider(
+            "Chunk Overlap",
+            min_value=0,
+            max_value=300,
+            value=DEFAULT_CHUNK_OVERLAP,
+            step=10,
+            help="Overlap between chunks"
+        )
 
-    # Model Settings
-    st.sidebar.subheader("Model Settings")
+        # Parameter-parameter lain
+        st.slider(
+            "Context Length",
+            min_value=1024,
+            max_value=8192,
+            value=4096,
+            step=1024,
+            help="Maximum context length"
+        )
 
-    # Chunking parameters
-    chunk_size = st.sidebar.slider(
-        "Chunk Size",
-        min_value=100,
-        max_value=1000,
-        value=DEFAULT_CHUNK_SIZE,
-        step=50,
-        help="Size of text chunks for processing"
-    )
+        top_k = st.slider(
+            "Top K Retrieval",
+            min_value=1,
+            max_value=20,
+            value=10,
+            step=1,
+            help="Number of documents to retrieve"
+        )
 
-    chunk_overlap = st.sidebar.slider(
-        "Chunk Overlap",
-        min_value=0,
-        max_value=300,
-        value=DEFAULT_CHUNK_OVERLAP,
-        step=10,
-        help="Overlap between chunks"
-    )
+        # Apply chunking parameters if changed
+        if "chunk_size" not in st.session_state or "chunk_overlap" not in st.session_state:
+            st.session_state.chunk_size = chunk_size
+            st.session_state.chunk_overlap = chunk_overlap
+        elif st.session_state.chunk_size != chunk_size or st.session_state.chunk_overlap != chunk_overlap:
+            st.session_state.chunk_size = chunk_size
+            st.session_state.chunk_overlap = chunk_overlap
+            if "rag_model" in st.session_state:
+                st.session_state.rag_model.chunk_size = chunk_size
+                st.session_state.rag_model.chunk_overlap = chunk_overlap
+                st.session_state.rag_model.text_splitter = RecursiveCharacterTextSplitter(
+                    chunk_size=chunk_size, chunk_overlap=chunk_overlap)
+                st.success("Chunking parameters updated")
 
-    # Parameter-parameter lain
-    st.sidebar.slider(
-        "Context Length",
-        min_value=1024,
-        max_value=8192,
-        value=4096,
-        step=1024,
-        help="Maximum context length"
-    )
-
-    top_k = st.sidebar.slider(
-        "Top K Retrieval",
-        min_value=1,
-        max_value=20,
-        value=10,
-        step=1,
-        help="Number of documents to retrieve"
-    )
-
-    # Apply chunking parameters if changed
-    if "chunk_size" not in st.session_state or "chunk_overlap" not in st.session_state:
-        st.session_state.chunk_size = chunk_size
-        st.session_state.chunk_overlap = chunk_overlap
-    elif st.session_state.chunk_size != chunk_size or st.session_state.chunk_overlap != chunk_overlap:
-        st.session_state.chunk_size = chunk_size
-        st.session_state.chunk_overlap = chunk_overlap
-        if "rag_model" in st.session_state:
-            st.session_state.rag_model.chunk_size = chunk_size
-            st.session_state.rag_model.chunk_overlap = chunk_overlap
-            st.session_state.rag_model.text_splitter = RecursiveCharacterTextSplitter(
-                chunk_size=chunk_size, chunk_overlap=chunk_overlap)
-            st.sidebar.success("Chunking parameters updated")
-
-    # Toggle settings
-    st.sidebar.divider()
-    st.sidebar.subheader("Advanced Options")
-
-    st.sidebar.toggle("Keep Model in Memory", value=True)
-    st.sidebar.toggle("Use Re-ranking", value=True)
-
-    # Add a button to start a new chat session
-    if st.sidebar.button("Start New Chat Session", type="primary", use_container_width=True):
-        # Generate a new session ID
-        st.session_state.session_id = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
-        st.rerun()
+    # Advanced Options - AS EXPANDER
+    with st.sidebar.expander("Advanced Options", expanded=False):
+        st.toggle("Keep Model in Memory", value=True)
+        st.toggle("Use Re-ranking", value=True)
 
 # RAG Chat Component
 
 
-def rag_chat_component():
-    """Component for RAG-based question answering with fixed chat input at bottom."""
+def document_management_component():
+    """Component for document management."""
     # Initialize database
     init_db_result = init_db()
     if not init_db_result:
         st.error("Failed to initialize database. Check sidebar for details.")
 
     # Initialize RAG model
+    if "rag_model" not in st.session_state:
+        st.session_state.rag_model = RAGModel()
+
+    # Document Management Section
+    st.header("Document Management")
+
+    # Multiple file upload
+    uploaded_files = st.file_uploader(
+        "Upload PDF files",
+        type=["pdf"],
+        accept_multiple_files=True
+    )
+
+    col1, col2 = st.columns([3, 1])
+    with col2:
+        process_button = st.button(
+            "Process Documents", type="primary", use_container_width=True)
+
+    # Process documents
+    if uploaded_files and process_button:
+        with st.status("Processing documents...") as status:
+            for uploaded_file in uploaded_files:
+                st.write(f"Processing: {uploaded_file.name}")
+                normalize_uploaded_file_name = uploaded_file.name.translate(
+                    str.maketrans({"-": "_", ".": "_", " ": "_"}))
+                all_splits = st.session_state.rag_model.process_document(
+                    uploaded_file)
+                st.write(f"Created {len(all_splits)} text chunks")
+
+                chunks_added = st.session_state.rag_model.add_to_vector_collection(
+                    all_splits, normalize_uploaded_file_name)
+
+                # Save document to DB
+                save_document(uploaded_file.name, len(all_splits))
+
+                st.success(
+                    f"Added {chunks_added} chunks from {uploaded_file.name}")
+
+            status.update(
+                label=f"Documents processed successfully!", state="complete")
+
+    # Display processed documents
+    documents = get_documents()
+    if documents:
+        st.subheader("Indexed Documents")
+
+        # Create columns for the header
+        col1, col2, col3, col4 = st.columns([0.1, 0.6, 0.2, 0.1])
+        col1.write("**#**")
+        col2.write("**Document**")
+        col3.write("**Chunks**")
+        col4.write("**Action**")
+
+        st.divider()
+
+        # List documents with delete buttons
+        for i, doc in enumerate(documents):
+            col1, col2, col3, col4 = st.columns([0.1, 0.6, 0.2, 0.1])
+            col1.write(f"{i+1}")
+            col2.write(doc['name'])
+            col3.write(doc['chunks'])
+            if col4.button("🗑️", key=f"delete_doc_{i}", help=f"Delete {doc['name']}"):
+                if delete_document(doc['name']):
+                    st.success(f"Deleted {doc['name']}")
+                    time.sleep(1)  # Give user time to see the message
+                    st.rerun()
+
+        st.divider()
+
+        # Add option to delete all documents
+        if st.button("Reset Vector Database", type="tertiary"):
+            try:
+                # Delete the vector store directory and recreate it
+                import shutil
+                shutil.rmtree(VECTORDB_PATH)
+                os.makedirs(VECTORDB_PATH, exist_ok=True)
+
+                # Clear the documents table
+                conn = sqlite3.connect(DB_PATH)
+                c = conn.cursor()
+                c.execute("DELETE FROM documents")
+                conn.commit()
+                conn.close()
+
+                st.success("Vector database has been reset")
+                st.rerun()
+            except Exception as e:
+                st.error(f"Error resetting vector database: {e}")
+    else:
+        st.info("No documents indexed. Upload and process documents to start.")
+
+
+def chat_component():
+    """Component for chat interface."""
+    # Initialize database and RAG model
     if "rag_model" not in st.session_state:
         st.session_state.rag_model = RAGModel()
 
@@ -617,226 +755,195 @@ def rag_chat_component():
     if "relevant_text_ids" not in st.session_state:
         st.session_state.relevant_text_ids = None
 
-    # Main content area with tabbed interface
-    tab1, tab2 = st.tabs(["📄 Document Upload", "💬 Chat"])
+    # Chat Section
+    st.header("Chat with your Documents")
+    st.divider()
 
-    # Document Upload Tab
-    with tab1:
-        st.header("Document Management")
+    # Display chat history
+    chat_history = get_chat_history()
 
-        # Multiple file upload
-        uploaded_files = st.file_uploader(
-            "Upload PDF files",
-            type=["pdf"],
-            accept_multiple_files=True
-        )
+    if chat_history:
+        for message in chat_history:
+            if message["role"] == "user":
+                with st.chat_message("user"):
+                    st.write(message["content"])
+            else:
+                with st.chat_message("assistant"):
+                    # First show thinking process if available
+                    if message.get("thinking_content"):
+                        with st.expander("AI Thinking Process", expanded=True):
+                            st.markdown(message["thinking_content"])
 
-        col1, col2 = st.columns([3, 1])
-        with col2:
-            process_button = st.button(
-                "Process Documents", type="primary", use_container_width=True)
+                    # Then display the main content
+                    st.write(message["content"])
 
-        # Process documents
-        if uploaded_files and process_button:
-            with st.status("Processing documents...") as status:
-                for uploaded_file in uploaded_files:
-                    st.write(f"Processing: {uploaded_file.name}")
-                    normalize_uploaded_file_name = uploaded_file.name.translate(
-                        str.maketrans({"-": "_", ".": "_", " ": "_"}))
-                    all_splits = st.session_state.rag_model.process_document(
-                        uploaded_file)
-                    st.write(f"Created {len(all_splits)} text chunks")
+                    # Other expanders come after the content
+                    if message.get("query_results"):
+                        with st.expander("See retrieved documents"):
+                            st.write(message["query_results"])
 
-                    chunks_added = st.session_state.rag_model.add_to_vector_collection(
-                        all_splits, normalize_uploaded_file_name)
+                    if message.get("relevant_text_ids"):
+                        with st.expander("See most relevant document ids"):
+                            st.write(message["relevant_text_ids"])
 
-                    # Save document to DB
-                    save_document(uploaded_file.name, len(all_splits))
-
-                    st.success(
-                        f"Added {chunks_added} chunks from {uploaded_file.name}")
-
-                status.update(
-                    label=f"Documents processed successfully!", state="complete")
-
-        # Display processed documents
+                    if message.get("relevant_text"):
+                        with st.expander("See relevant text"):
+                            st.write(message["relevant_text"])
+    else:
         documents = get_documents()
         if documents:
-            st.subheader("Indexed Documents")
-
-            # Create table
-            data = []
-            for i, doc in enumerate(documents):
-                data.append(
-                    {"#": i+1, "Document": doc['name'], "Chunks": doc['chunks']})
-
-            if data:
-                st.table(data)
-
-    # Chat Tab
-    with tab2:
-        st.header("Chat with your Documents")
-        st.divider()
-
-        # Display chat history
-        chat_history = get_chat_history()
-
-        if chat_history:
-            for message in chat_history:
-                if message["role"] == "user":
-                    with st.chat_message("user"):
-                        st.write(message["content"])
-                else:
-                    with st.chat_message("assistant"):
-                        # Display the main content
-                        st.write(message["content"])
-
-                        # Display thinking process if available
-                        if message.get("thinking_content"):
-                            with st.expander("See AI thinking process"):
-                                st.markdown(message["thinking_content"])
-
-                        # Display query results if available
-                        if message.get("query_results"):
-                            with st.expander("See retrieved documents"):
-                                st.write(message["query_results"])
-
-                        # Display relevant text ids if available
-                        if message.get("relevant_text_ids"):
-                            with st.expander("See most relevant document ids"):
-                                st.write(message["relevant_text_ids"])
-
-                        # Display relevant text if available
-                        if message.get("relevant_text"):
-                            with st.expander("See relevant text"):
-                                st.write(message["relevant_text"])
+            st.info(
+                "Ask a question about your documents using the input box below")
         else:
-            documents = get_documents()
-            if documents:
-                st.info(
-                    "Ask a question about your documents using the input box below")
-            else:
-                st.warning(
-                    "Please upload and process documents in the Document Upload tab first")
+            st.warning(
+                "Please upload and process documents in the Document Management section first")
 
-        # Use st.chat_input for a cleaner chat interface
-        # This is a more modern Streamlit feature that handles the fixed position chat input
-        prompt = st.chat_input("Ask a question about your documents...")
+    # Use st.chat_input for a cleaner chat interface
+    prompt = st.chat_input("Ask a question about your documents...")
 
-        # Process prompt when submitted
-        documents = get_documents()
-        if prompt and documents:
-            # Save user message to DB
-            save_message("user", prompt)
+    # Process prompt when submitted
+    documents = get_documents()
+    if prompt and documents:
+        # Save user message to DB
+        save_message("user", prompt)
 
-            # Display user message immediately
-            with st.chat_message("user"):
-                st.write(prompt)
+        # Display user message immediately
+        with st.chat_message("user"):
+            st.write(prompt)
 
-            # First, show a status while retrieving documents
-            with st.status("Retrieving relevant documents...") as status:
-                try:
-                    # Get results from vector DB
-                    results = st.session_state.rag_model.query_collection(
-                        prompt)
-                    st.session_state.query_results = results
+        # First, show a status while retrieving documents
+        with st.status("Retrieving relevant documents...") as status:
+            try:
+                # Get results from vector DB
+                results = st.session_state.rag_model.query_collection(
+                    prompt)
+                st.session_state.query_results = results
 
-                    if results and len(results.get("documents", [[]])[0]) > 0:
-                        context = results.get("documents")[0]
-                        relevant_text, relevant_text_ids = st.session_state.rag_model.re_rank_documents(
-                            prompt, context)
+                if results and len(results.get("documents", [[]])[0]) > 0:
+                    context = results.get("documents")[0]
+                    relevant_text, relevant_text_ids = st.session_state.rag_model.re_rank_documents(
+                        prompt, context)
 
-                        # Save to session state
-                        st.session_state.relevant_text = relevant_text
-                        st.session_state.relevant_text_ids = relevant_text_ids
+                    # Save to session state
+                    st.session_state.relevant_text = relevant_text
+                    st.session_state.relevant_text_ids = relevant_text_ids
 
-                        status.update(
-                            label="Documents retrieved successfully!", state="complete")
-                    else:
-                        st.error(
-                            "No relevant documents found. Please try a different question or upload more documents.")
-                        status.update(
-                            label="No relevant documents found", state="error")
-                        return
-                except Exception as e:
-                    st.error(f"Error retrieving documents: {str(e)}")
                     status.update(
-                        label=f"Error: {str(e)}", state="error")
+                        label="Documents retrieved successfully!", state="complete")
+                else:
+                    st.error(
+                        "No relevant documents found. Please try a different question or upload more documents.")
+                    status.update(
+                        label="No relevant documents found", state="error")
                     return
+            except Exception as e:
+                st.error(f"Error retrieving documents: {str(e)}")
+                status.update(
+                    label=f"Error: {str(e)}", state="error")
+                return
 
-            # Buat placeholder untuk chat message assistant
-            with st.chat_message("assistant"):
-                response_placeholder = st.empty()
+        # Generate assistant response
+        with st.chat_message("assistant"):
+            # First, create and auto-expand the thinking process expander
+            with st.expander("AI Thinking Process", expanded=True):
+                thinking_placeholder = st.empty()
 
-                # Buat expander untuk thinking process dengan placeholder di dalamnya
-                with st.expander("See AI thinking process"):
-                    thinking_placeholder = st.empty()
+            # Next, create placeholder for the response below the thinking process
+            response_placeholder = st.empty()
 
-                # Variabel untuk menyimpan respons dan thinking process
-                full_response = ""
-                thinking_content = ""
-                in_thinking_section = False
+            # Variables to store response and thinking process
+            full_response = ""
+            thinking_content = ""
+            in_thinking_section = False
 
-                # Stream response dari LLM
-                for chunk in st.session_state.rag_model.call_llm(context=relevant_text, prompt=prompt):
-                    # Handling thinking tags
-                    if "<think>" in chunk:
-                        parts = chunk.split("<think>")
-                        if len(parts) > 0:
-                            full_response += parts[0]
-                        if len(parts) > 1:
-                            thinking_content += parts[1]
-                        in_thinking_section = True
-                    elif "</think>" in chunk and in_thinking_section:
-                        parts = chunk.split("</think>")
-                        thinking_content += parts[0]
-                        if len(parts) > 1:
-                            full_response += parts[1]
-                        in_thinking_section = False
-                    elif in_thinking_section:
-                        thinking_content += chunk
-                    else:
-                        full_response += chunk
+            # Stream response from LLM
+            for chunk in st.session_state.rag_model.call_llm(context=relevant_text, prompt=prompt):
+                # Handling thinking tags
+                if "<think>" in chunk:
+                    parts = chunk.split("<think>")
+                    if len(parts) > 0:
+                        full_response += parts[0]
+                    if len(parts) > 1:
+                        thinking_content += parts[1]
+                    in_thinking_section = True
+                elif "</think>" in chunk and in_thinking_section:
+                    parts = chunk.split("</think>")
+                    thinking_content += parts[0]
+                    if len(parts) > 1:
+                        full_response += parts[1]
+                    in_thinking_section = False
+                elif in_thinking_section:
+                    thinking_content += chunk
+                else:
+                    full_response += chunk
 
-                    # Update placeholders dengan konten terbaru
-                    if in_thinking_section:
-                        thinking_placeholder.markdown(thinking_content + "▌")
-                    else:
-                        thinking_placeholder.markdown(thinking_content)
+                # Update placeholders with latest content
+                if in_thinking_section:
+                    thinking_placeholder.markdown(thinking_content + "▌")
+                else:
+                    thinking_placeholder.markdown(thinking_content)
 
-                    response_placeholder.markdown(
-                        full_response + ("" if in_thinking_section else "▌"))
-                    # Tambahkan sedikit delay untuk efek ketikan
-                    time.sleep(0.01)
+                response_placeholder.markdown(
+                    full_response + ("" if in_thinking_section else "▌"))
+                # Add slight delay for typing effect
+                time.sleep(0.01)
 
-                # Tampilkan versi final
-                thinking_placeholder.markdown(thinking_content)
-                response_placeholder.markdown(full_response)
+            # Show final version
+            thinking_placeholder.markdown(thinking_content)
+            response_placeholder.markdown(full_response)
 
-                # Tampilkan debug expanders SETELAH jawaban
-                with st.expander("See retrieved documents"):
-                    st.write(st.session_state.query_results)
+            # Debug expanders after the answer
+            with st.expander("See retrieved documents"):
+                st.write(st.session_state.query_results)
 
-                with st.expander("See most relevant document ids"):
-                    st.write(st.session_state.relevant_text_ids)
+            with st.expander("See most relevant document ids"):
+                st.write(st.session_state.relevant_text_ids)
 
-                with st.expander("See relevant text"):
-                    st.write(st.session_state.relevant_text)
+            with st.expander("See relevant text"):
+                st.write(st.session_state.relevant_text)
 
-                # Save complete response with debug info to DB
-                save_message(
-                    role="assistant",
-                    content=full_response,
-                    thinking_content=thinking_content,
-                    query_results=st.session_state.query_results,
-                    relevant_text_ids=st.session_state.relevant_text_ids,
-                    relevant_text=st.session_state.relevant_text
-                )
-
-# Main entry point for RAG tool
+            # Save complete response with debug info to DB
+            save_message(
+                role="assistant",
+                content=full_response,
+                thinking_content=thinking_content,
+                query_results=st.session_state.query_results,
+                relevant_text_ids=st.session_state.relevant_text_ids,
+                relevant_text=st.session_state.relevant_text
+            )
 
 
 def rag():
     """Main function to run the RAG tool."""
+    # First do sidebar navigation
+    with st.sidebar:
+        st.title("Navigation")
+        st.divider()
+
+        # Set default view if not already set
+        if "rag_view" not in st.session_state:
+            st.session_state.rag_view = "documents"
+
+        # Navigation buttons
+        if st.button("📄 Document Management",
+                     type="primary" if st.session_state.rag_view == "documents" else "secondary",
+                     use_container_width=True):
+            st.session_state.rag_view = "documents"
+            st.rerun()
+
+        if st.button("💬 Chat with Documents",
+                     type="primary" if st.session_state.rag_view == "chat" else "secondary",
+                     use_container_width=True):
+            st.session_state.rag_view = "chat"
+            st.rerun()
+
+        st.divider()
+
+    # Then call the sidebar component with all the settings
     sidebar_component()
-    rag_chat_component()
+
+    # Display the selected view
+    if st.session_state.rag_view == "documents":
+        document_management_component()
+    else:
+        chat_component()

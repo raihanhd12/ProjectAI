@@ -1,11 +1,20 @@
-from src.RAG.main import rag
-from src.OCR.main import ocr
 import streamlit as st
 
 # Set up page config as the first Streamlit command
 st.set_page_config(page_title="AI Document Assistant", layout="wide")
 
-# Import components
+# Now import modules after page config
+# We'll use a function to import them on-demand to avoid any module-level Streamlit commands
+
+
+def import_rag():
+    try:
+        from src.RAG.main import rag
+        return rag
+    except Exception as e:
+        def error_rag():
+            st.error(f"Failed to load RAG module: {str(e)}")
+        return error_rag
 
 
 def main():
@@ -43,10 +52,14 @@ def main():
     if st.session_state.current_page == "home":
         home_page()
     elif st.session_state.current_page == "rag":
-        rag()  # Call the RAG component
+        # Import and call RAG only when needed
+        rag_function = import_rag()
+        rag_function()
     # elif st.session_state.current_page == "ocr":
-    #     ocr()  # Call the OCR component
-    # Add more page conditions as needed
+    #     # Import and call OCR only when needed
+    #     # from src.OCR.main import ocr
+    #     # ocr()
+    #     pass
 
 
 def home_page():
@@ -80,19 +93,14 @@ def home_page():
             st.session_state.current_page = "rag"
             st.rerun()
 
-    # with col2:
-    #     st.info("### 📷 OCR Tools (Coming Soon)")
-    #     st.markdown("""
-    #     - Upload images or scanned documents
-    #     - Extract text using optical character recognition
-    #     - Process and analyze extracted text
-    #     - Save results in various formats
-    #     """)
-
-    #     # Button to go to OCR page
-    #     if st.button("Go to OCR Tools", use_container_width=True):
-    #         st.session_state.current_page = "ocr"
-    #         st.rerun()
+    with col2:
+        st.info("### 📷 OCR Tools (Coming Soon)")
+        st.markdown("""
+        - Upload images or scanned documents
+        - Extract text using optical character recognition
+        - Process and analyze extracted text
+        - Save results in various formats
+        """)
 
     # Usage tips
     st.subheader("Getting Started")
