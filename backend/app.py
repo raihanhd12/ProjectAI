@@ -1,19 +1,20 @@
 """
 AI Document Assistant Backend API
 """
-from fastapi import FastAPI, UploadFile, File, Form, Request, HTTPException
+from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
 import uvicorn
 import os
-import io
-import tempfile
-import shutil
-from typing import List, Optional, Dict, Any
-import numpy as np
+from sqlalchemy.orm import Session
 
 # Import routes
-from routes import document_routes, chat_routes
+try:
+    from routes import document_routes, chat_routes, health_routes
+except ImportError as e:
+    print(
+        f"Import error: {e}. Please run this script from the backend directory.")
+    import sys
+    sys.exit(1)
 
 # Create FastAPI app
 app = FastAPI(
@@ -32,16 +33,14 @@ app.add_middleware(
 )
 
 # Include routes
-app.include_router(document_routes.router, prefix="/api/documents", tags=["documents"])
+app.include_router(document_routes.router,
+                   prefix="/api/documents", tags=["documents"])
 app.include_router(chat_routes.router, prefix="/api/chat", tags=["chat"])
-
-# Health check endpoint
-@app.get("/api/health")
-async def health_check():
-    """Health check endpoint."""
-    return {"status": "healthy"}
+app.include_router(health_routes.router, prefix="/api/health", tags=["health"])
 
 # Root endpoint
+
+
 @app.get("/")
 async def root():
     """Root endpoint with API information."""
@@ -50,6 +49,21 @@ async def root():
         "documentation": "/docs",
         "version": "1.0.0"
     }
+
+# Initialize database tables on startup
+
+
+@app.on_event("startup")
+async def startup_event():
+    """Initialize resources on application startup."""
+    from db import Base, engine
+
+    # Import models to ensure they're registered with Base
+    from db.models import Document, ChatSession, ChatMessage
+
+    # Create database tables
+    Base.metadata.create_all(bind=engine)
+    print("Database tables initialized")
 
 if __name__ == "__main__":
     # Run using Uvicorn

@@ -11,19 +11,26 @@ dotenv.load_dotenv()
 # Get the absolute path of the project root directory
 BASE_DIR = Path(__file__).resolve().parent
 
+# Database configuration
+DB_CONFIG = {
+    "host": os.getenv("MYSQL_HOST", "localhost"),
+    "port": int(os.getenv("MYSQL_PORT", "3306")),
+    "user": os.getenv("MYSQL_USER", "root"),
+    "password": os.getenv("MYSQL_PASSWORD", ""),
+    "database": os.getenv("MYSQL_DATABASE", "ai_doc_assistant"),
+}
+
+# Vector DB path
+VECTORDB_PATH = os.getenv("VECTORDB_PATH", os.path.join(BASE_DIR, "..", "db", "vector"))
+
+# Make sure the directories exist
+os.makedirs(VECTORDB_PATH, exist_ok=True)
+
 # Model configuration
 AVAILABLE_LLM_MODELS = os.getenv("AVAILABLE_LLM_MODELS", "").split(",")
 DEFAULT_LLM_MODEL = os.getenv("DEFAULT_LLM_MODEL", "")
 AVAILABLE_EMBEDDING_MODELS = os.getenv("AVAILABLE_EMBEDDING_MODELS", "").split(",")
 DEFAULT_EMBEDDING_MODEL = os.getenv("DEFAULT_EMBEDDING_MODEL", "")
-
-# File paths
-VECTORDB_PATH = os.getenv("VECTORDB_PATH", os.path.join(BASE_DIR, "..", "db", "vector"))
-DB_PATH = os.getenv("DB_PATH", os.path.join(BASE_DIR, "..", "db", "chat-history", "chat_db.sqlite"))
-
-# Make sure the directories exist
-for path in [VECTORDB_PATH, os.path.dirname(DB_PATH)]:
-    os.makedirs(path, exist_ok=True)
 
 # Chunking parameters
 DEFAULT_CHUNK_SIZE = int(os.getenv("DEFAULT_CHUNK_SIZE", "800"))
