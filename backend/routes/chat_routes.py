@@ -15,7 +15,7 @@ from models.rag_model import RAGModel
 from db import chat_db
 
 # Import dependencies
-from backend.dependencies import verify_api_token, get_db_session
+from dependencies import verify_api_token, get_db_session
 
 # Create router
 router = APIRouter()

@@ -20,8 +20,15 @@ DB_CONFIG = {
     "database": os.getenv("MYSQL_DATABASE", "ai_doc_assistant"),
 }
 
+# JWT Settings
+JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "")
+JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
+ACCESS_TOKEN_EXPIRE_MINUTES = int(
+    os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
+
 # Vector DB path
-VECTORDB_PATH = os.getenv("VECTORDB_PATH", os.path.join(BASE_DIR, "..", "db", "vector"))
+VECTORDB_PATH = os.getenv(
+    "VECTORDB_PATH", os.path.join(BASE_DIR, "..", "db", "vector"))
 
 # Make sure the directories exist
 os.makedirs(VECTORDB_PATH, exist_ok=True)
@@ -29,7 +36,8 @@ os.makedirs(VECTORDB_PATH, exist_ok=True)
 # Model configuration
 AVAILABLE_LLM_MODELS = os.getenv("AVAILABLE_LLM_MODELS", "").split(",")
 DEFAULT_LLM_MODEL = os.getenv("DEFAULT_LLM_MODEL", "")
-AVAILABLE_EMBEDDING_MODELS = os.getenv("AVAILABLE_EMBEDDING_MODELS", "").split(",")
+AVAILABLE_EMBEDDING_MODELS = os.getenv(
+    "AVAILABLE_EMBEDDING_MODELS", "").split(",")
 DEFAULT_EMBEDDING_MODEL = os.getenv("DEFAULT_EMBEDDING_MODEL", "")
 
 # Chunking parameters

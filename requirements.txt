@@ -4,10 +4,13 @@ fastapi
 langchain
 langchain-community
 langchain-text-splitters
+passlib[bcrypt]
 pydantic
+PyJWT
 PyMuPDF
 pymysql
 python-dotenv
+python-jose[cryptography]
 python-multipart
 requests
 sentence-transformers

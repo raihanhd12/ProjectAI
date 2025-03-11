@@ -1,10 +1,6 @@
 """
 Script to initialize the database and create tables.
 """
-from db import Base, engine
-import config
-import pymysql
-from sqlalchemy import create_engine, text
 import sys
 import os
 
@@ -12,6 +8,21 @@ import os
 current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(current_dir)
 sys.path.insert(0, parent_dir)
+
+# Print for debugging
+print(f"Added to path: {parent_dir}")
+print(f"Current path: {sys.path}")
+
+# Now import application modules
+try:
+    import config
+    from db import Base, engine
+    from sqlalchemy import create_engine, text
+    import pymysql
+except ImportError as e:
+    print(f"Import error: {e}")
+    print(f"Failed to import. Current path: {sys.path}")
+    sys.exit(1)
 
 
 def create_database():

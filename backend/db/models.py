@@ -1,9 +1,10 @@
 """
 SQLAlchemy models for the database.
 """
-from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, func
+from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, func, Boolean
 from sqlalchemy.orm import relationship
 from datetime import datetime
+from passlib.hash import bcrypt
 
 from db import Base
 
@@ -81,3 +82,44 @@ class ChatMessage(Base):
             "relevant_text_ids": self.relevant_text_ids,
             "relevant_text": self.relevant_text
         }
+
+
+class User(Base):
+    """User model for authentication."""
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True, index=True)
+    username = Column(String(50), unique=True, nullable=False, index=True)
+    email = Column(String(100), unique=True, nullable=False, index=True)
+    password_hash = Column(String(255), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    is_active = Column(Boolean, default=True)
+
+    def verify_password(self, password):
+        """Verify password against stored hash."""
+        return bcrypt.verify(password, self.password_hash)
+
+    @staticmethod
+    def get_password_hash(password):
+        """Generate password hash."""
+        return bcrypt.hash(password)
+
+    def to_dict(self):
+        """Convert model to dictionary."""
+        return {
+            "id": self.id,
+            "username": self.username,
+            "email": self.email,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "is_active": self.is_active
+        }
+
+
+class TokenBlacklist(Base):
+    """Model for blacklisted JWT tokens."""
+    __tablename__ = "token_blacklist"
+
+    id = Column(Integer, primary_key=True, index=True)
+    token = Column(String(500), nullable=False, index=True)
+    blacklisted_on = Column(DateTime, default=datetime.utcnow)
+    expires_at = Column(DateTime, nullable=False)

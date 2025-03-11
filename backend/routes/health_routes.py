@@ -4,7 +4,7 @@ Health and monitoring routes for the AI Document Assistant API.
 from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy.orm import Session
 
-from backend.dependencies import get_db_session
+from dependencies import get_db_session
 import config
 
 # Create router

@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 import os
 from sqlalchemy.orm import Session
+from routes import auth_routes
 
 # Import routes
 try:
@@ -33,6 +34,7 @@ app.add_middleware(
 )
 
 # Include routes
+app.include_router(auth_routes.router, prefix="/api/auth", tags=["auth"])
 app.include_router(document_routes.router,
                    prefix="/api/documents", tags=["documents"])
 app.include_router(chat_routes.router, prefix="/api/chat", tags=["chat"])
