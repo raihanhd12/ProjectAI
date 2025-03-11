@@ -46,8 +46,8 @@ Important:
 """
 
 # Configuration parameters
-AVAILABLE_LLM_MODELS = ["llama3", "deepseek-r1"]
-DEFAULT_LLM_MODEL = "llama3"
+AVAILABLE_LLM_MODELS = ["llama3", "deepseek-r1:8b"]
+DEFAULT_LLM_MODEL = "deepseek-r1:8b"
 AVAILABLE_EMBEDDING_MODELS = ["nomic-embed-text:latest"]
 DEFAULT_EMBEDDING_MODEL = "nomic-embed-text:latest"
 
@@ -416,22 +416,158 @@ class RAGModel:
             relevant_text_ids.append(rank["corpus_id"])
         return relevant_text, relevant_text_ids
 
+    # def call_llm(self, context: str, prompt: str):
+    #     """Calls the language model with context and prompt to generate a response."""
+    #     try:
+    #         response = ollama.chat(
+    #             model=self.llm_model_name,
+    #             stream=True,
+    #             messages=[{"role": "system", "content": self.system_prompt}, {
+    #                 "role": "user", "content": f"Context: {context}, Question: {prompt}"}]
+    #         )
+    #         for chunk in response:
+    #             if chunk["done"] is False:
+    #                 yield chunk["message"]["content"]
+    #             else:
+    #                 break
+    #     except Exception as e:
+    #         yield f"Error calling LLM: {str(e)}"
+
+    # def call_llm(self, context: str, prompt: str):
+    #     """Calls the language model with context and prompt to generate a response using ngrok URL."""
+    #     try:
+    #         import requests
+    #         import json
+
+    #         # Use the same ngrok URL that's being used for embeddings
+    #         ngrok_url = "https://3458-103-78-115-240.ngrok-free.app/api/chat"
+
+    #         # Prepare the request payload
+    #         payload = {
+    #             "model": self.llm_model_name,
+    #             "messages": [
+    #                 {"role": "system", "content": self.system_prompt},
+    #                 {"role": "user", "content": f"Context: {context}, Question: {prompt}"}
+    #             ],
+    #             "stream": True
+    #         }
+
+    #         # Make a streaming request to the ngrok endpoint
+    #         response = requests.post(ngrok_url, json=payload, stream=True)
+
+    #         if response.status_code != 200:
+    #             yield f"Error: Received status code {response.status_code} from API"
+    #             return
+
+    #         # Process the streaming response
+    #         for line in response.iter_lines():
+    #             if line:
+    #                 try:
+    #                     # Remove 'data: ' prefix if it exists (common in SSE streams)
+    #                     if line.startswith(b'data: '):
+    #                         line = line[6:]
+
+    #                     # Skip empty lines or heartbeats
+    #                     if not line or line == b':' or line == b'data: [DONE]':
+    #                         continue
+
+    #                     # Parse the JSON
+    #                     chunk = json.loads(line)
+
+    #                     # Extract the content based on the expected response format
+    #                     # This might need adjustment based on your API's exact response format
+    #                     if "choices" in chunk and len(chunk["choices"]) > 0:
+    #                         content = chunk["choices"][0].get(
+    #                             "delta", {}).get("content", "")
+    #                         if content:
+    #                             yield content
+    #                     elif "message" in chunk and "content" in chunk["message"]:
+    #                         # Similar to your original format
+    #                         yield chunk["message"]["content"]
+
+    #                 except json.JSONDecodeError:
+    #                     # Skip non-JSON lines
+    #                     continue
+    #                 except Exception as e:
+    #                     yield f"Error parsing response: {str(e)}"
+
+    #         # Add a fallback in case the stream closes without proper indication
+    #         yield ""
+
+    #     except Exception as e:
+    #         yield f"Error calling LLM via ngrok: {str(e)}"
+
     def call_llm(self, context: str, prompt: str):
-        """Calls the language model with context and prompt to generate a response."""
+        """Calls the language model with Digital Ocean GenAI Agent API to generate a response."""
         try:
-            response = ollama.chat(
-                model=self.llm_model_name,
-                stream=True,
-                messages=[{"role": "system", "content": self.system_prompt}, {
-                    "role": "user", "content": f"Context: {context}, Question: {prompt}"}]
-            )
-            for chunk in response:
-                if chunk["done"] is False:
-                    yield chunk["message"]["content"]
-                else:
-                    break
+            import requests
+            import json
+
+            # Digital Ocean GenAI Agent API endpoint
+            api_url = "https://agent-9d0a55ab65f61611182c-p7e2w.ondigitalocean.app/api/v1/chat/completions"
+
+            # Your authorization token
+            headers = {
+                "Authorization": "Bearer eEtfrIkIm1-CK-HtfIwgdiGtcmAAfKsJ",
+                "Content-Type": "application/json"
+            }
+
+            # Prepare the request payload according to Digital Ocean API docs
+            payload = {
+                "messages": [
+                    {"role": "system", "content": self.system_prompt},
+                    {"role": "user", "content": f"Context: {context}, Question: {prompt}"}
+                ],
+                "temperature": 0.7,
+                "max_tokens": 1000,
+                "stream": True,
+                "include_retrieval_info": True  # Include info about retrieved documents
+            }
+
+            # Make a streaming request to the Digital Ocean endpoint
+            response = requests.post(
+                api_url, headers=headers, json=payload, stream=True)
+
+            if response.status_code != 200:
+                yield f"Error: Received status code {response.status_code} from API"
+                return
+
+            # Process the streaming response
+            for line in response.iter_lines():
+                if line:
+                    try:
+                        # Remove 'data: ' prefix if it exists (common in SSE streams)
+                        if line.startswith(b'data: '):
+                            line = line[6:]
+
+                        # Skip empty lines or heartbeats
+                        if not line or line == b':' or line == b'data: [DONE]':
+                            continue
+
+                        # Parse the JSON
+                        chunk = json.loads(line)
+
+                        # Extract the content based on Digital Ocean API response format
+                        if "choices" in chunk and len(chunk["choices"]) > 0:
+                            choice = chunk["choices"][0]
+                            if "delta" in choice and "content" in choice["delta"]:
+                                content = choice["delta"]["content"]
+                                if content:
+                                    yield content
+                            elif "message" in choice and "content" in choice["message"]:
+                                yield choice["message"]["content"]
+
+                    except json.JSONDecodeError:
+                        # Skip non-JSON lines
+                        continue
+                    except Exception as e:
+                        yield f"Error parsing response: {str(e)}"
+
+            # Add a fallback in case the stream closes without proper indication
+            yield ""
+
         except Exception as e:
-            yield f"Error calling LLM: {str(e)}"
+            yield f"Error calling Digital Ocean GenAI API: {str(e)}"
 
 # Sidebar Component
 
@@ -856,9 +992,17 @@ def chat_component():
             thinking_content = ""
             in_thinking_section = False
 
+            # Define thinking starter phrases - these are typical phrases that models use when starting to think
+            thinking_starters = ["Okay", "Let me",
+                                 "I need to", "First", "Based on", "Looking at"]
+
+            # Collect initial content to detect if it's a thinking process
+            initial_content = ""
+            initial_content_collected = False
+
             # Stream response from LLM
             for chunk in st.session_state.rag_model.call_llm(context=relevant_text, prompt=prompt):
-                # Handling thinking tags
+                # Handle explicit thinking tags
                 if "<think>" in chunk:
                     parts = chunk.split("<think>")
                     if len(parts) > 0:
@@ -866,29 +1010,65 @@ def chat_component():
                     if len(parts) > 1:
                         thinking_content += parts[1]
                     in_thinking_section = True
+                    # We've found explicit tags, so stop checking for implicit thinking
+                    initial_content_collected = True
+
                 elif "</think>" in chunk and in_thinking_section:
                     parts = chunk.split("</think>")
                     thinking_content += parts[0]
                     if len(parts) > 1:
                         full_response += parts[1]
                     in_thinking_section = False
+
                 elif in_thinking_section:
                     thinking_content += chunk
+
                 else:
-                    full_response += chunk
+                    # Check for implicit thinking starters if we haven't collected much content yet
+                    if not initial_content_collected and len(initial_content) < 100:
+                        initial_content += chunk
+
+                        # Check if we have enough content to determine if it's starting with thinking phrases
+                        if len(initial_content) > 20 or "." in initial_content:
+                            initial_content_collected = True
+
+                            # Check if the initial content starts with any thinking starter phrases
+                            if any(initial_content.strip().startswith(starter) for starter in thinking_starters):
+                                # This looks like a thinking process without explicit tags
+                                first_period = initial_content.find(".")
+                                if first_period != -1 and first_period < 50:
+                                    # If there's a period early in the text, treat everything up to
+                                    # the first paragraph break as thinking
+                                    first_paragraph_break = initial_content.find(
+                                        "\n\n")
+                                    if first_paragraph_break != -1:
+                                        thinking_content = initial_content[:first_paragraph_break]
+                                        full_response = initial_content[first_paragraph_break:]
+                                    else:
+                                        # No paragraph break yet, put it all in thinking for now
+                                        thinking_content = initial_content
+                                else:
+                                    # No early period, just add it all to thinking for now
+                                    thinking_content = initial_content
+                            else:
+                                # Not a thinking starter, treat as normal response
+                                full_response = initial_content
+                    else:
+                        full_response += chunk
 
                 # Update placeholders with latest content
-                if in_thinking_section:
+                if in_thinking_section or not initial_content_collected:
                     thinking_placeholder.markdown(thinking_content + "▌")
                 else:
                     thinking_placeholder.markdown(thinking_content)
 
                 response_placeholder.markdown(
-                    full_response + ("" if in_thinking_section else "▌"))
+                    full_response + ("" if in_thinking_section or not initial_content_collected else "▌"))
+
                 # Add slight delay for typing effect
                 time.sleep(0.01)
 
-            # Show final version
+            # Final update to remove cursor
             thinking_placeholder.markdown(thinking_content)
             response_placeholder.markdown(full_response)
 
