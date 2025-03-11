@@ -1,4 +1,3 @@
-\
 accelerate
 chromadb
 docx2txt
@@ -22,6 +21,7 @@ pydantic
 PyMuPDF
 pytesseract
 python-docx
+python-dotenv
 sentence-transformers
 sentencepiece
 streamlit
