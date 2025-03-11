@@ -1,25 +1,25 @@
 """
-Database operations for the RAG module.
+Chat database operations.
 """
 import os
 import sqlite3
 import datetime
 import json
-import streamlit as st
-from . import config
-from . import utils
+from typing import List, Dict, Any, Optional, Tuple
+
+import config
+from utils import helpers
 
 
-def init_db():
+def init_db() -> bool:
     """
-    Initialize the SQLite database for chat history and documents.
+    Initialize the SQLite database for chat history.
 
     Returns:
         bool: True if successful, False otherwise
     """
-    # Ensure directory exists (just the parent directory of the DB file)
-    utils.ensure_directories(
-        [os.path.dirname(config.DB_PATH), config.VECTORDB_PATH])
+    # Ensure directory exists
+    os.makedirs(os.path.dirname(config.DB_PATH), exist_ok=True)
 
     try:
         conn = sqlite3.connect(config.DB_PATH)
@@ -40,53 +40,53 @@ def init_db():
         )
         ''')
 
-        # Create documents table
-        c.execute('''
-        CREATE TABLE IF NOT EXISTS documents (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL,
-            chunks INTEGER NOT NULL,
-            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-        )
-        ''')
-
         conn.commit()
         conn.close()
         return True
     except sqlite3.Error as e:
-        st.error(f"Database initialization error: {e}")
+        print(f"Database initialization error: {e}")
         return False
 
 
-def get_session_id():
+def create_session(session_id: Optional[str] = None) -> str:
     """
-    Get or create a session ID.
+    Create a new chat session.
+
+    Args:
+        session_id (str, optional): Custom session ID
 
     Returns:
         str: Session ID
     """
-    if "session_id" not in st.session_state:
-        st.session_state.session_id = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
-    return st.session_state.session_id
+    if not session_id:
+        session_id = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
+    return session_id
 
 
-def save_message(role, content, thinking_content=None, query_results=None, relevant_text_ids=None, relevant_text=None):
+def save_message(
+    session_id: str,
+    role: str,
+    content: str,
+    thinking_content: Optional[str] = None,
+    query_results: Optional[Dict] = None,
+    relevant_text_ids: Optional[List] = None,
+    relevant_text: Optional[str] = None
+) -> bool:
     """
     Save a message to the database.
 
     Args:
+        session_id (str): Session ID
         role (str): Message role (user or assistant)
         content (str): Message content
         thinking_content (str, optional): AI thinking process
-        query_results (dict, optional): Query results from vector store
-        relevant_text_ids (list, optional): IDs of relevant text chunks
+        query_results (Dict, optional): Query results from vector store
+        relevant_text_ids (List, optional): IDs of relevant text chunks
         relevant_text (str, optional): Relevant text content
 
     Returns:
         bool: True if successful, False otherwise
     """
-    session_id = get_session_id()
-
     try:
         conn = sqlite3.connect(config.DB_PATH)
         c = conn.cursor()
@@ -107,65 +107,20 @@ def save_message(role, content, thinking_content=None, query_results=None, relev
         conn.close()
         return True
     except sqlite3.Error as e:
-        st.error(f"Error saving message: {e}")
+        print(f"Error saving message: {e}")
         return False
 
 
-def save_document(name, chunks):
+def get_chat_history(session_id: str) -> List[Dict[str, Any]]:
     """
-    Save document metadata to the database.
+    Get chat history for a session.
 
     Args:
-        name (str): Document name
-        chunks (int): Number of text chunks
+        session_id (str): Session ID
 
     Returns:
-        bool: True if successful, False otherwise
+        List[Dict[str, Any]]: List of chat messages
     """
-    try:
-        conn = sqlite3.connect(config.DB_PATH)
-        c = conn.cursor()
-        c.execute(
-            "INSERT INTO documents (name, chunks) VALUES (?, ?)", (name, chunks))
-        conn.commit()
-        conn.close()
-        return True
-    except sqlite3.Error as e:
-        st.error(f"Error saving document: {e}")
-        return False
-
-
-def delete_document(doc_name):
-    """
-    Delete a document from the database.
-
-    Args:
-        doc_name (str): Document name
-
-    Returns:
-        bool: True if successful, False otherwise
-    """
-    try:
-        conn = sqlite3.connect(config.DB_PATH)
-        c = conn.cursor()
-        c.execute("DELETE FROM documents WHERE name = ?", (doc_name,))
-        conn.commit()
-        conn.close()
-        return True
-    except sqlite3.Error as e:
-        st.error(f"Error deleting document: {e}")
-        return False
-
-
-def get_chat_history():
-    """
-    Get chat history for the current session.
-
-    Returns:
-        list: List of chat messages
-    """
-    session_id = get_session_id()
-
     try:
         conn = sqlite3.connect(config.DB_PATH)
         c = conn.cursor()
@@ -204,11 +159,11 @@ def get_chat_history():
         conn.close()
         return chat_history
     except sqlite3.Error as e:
-        st.error(f"Database error: {e}")
+        print(f"Database error: {e}")
         return []
 
 
-def get_recent_chat_sessions(limit=5):
+def get_recent_chat_sessions(limit: int = 5) -> List[Tuple]:
     """
     Get recent chat sessions.
 
@@ -216,7 +171,7 @@ def get_recent_chat_sessions(limit=5):
         limit (int, optional): Maximum number of sessions to return
 
     Returns:
-        list: List of recent chat sessions
+        List[Tuple]: List of recent chat sessions
     """
     try:
         conn = sqlite3.connect(config.DB_PATH)
@@ -239,31 +194,11 @@ def get_recent_chat_sessions(limit=5):
         conn.close()
         return recent_sessions
     except sqlite3.Error as e:
-        st.error(f"Database error retrieving recent sessions: {e}")
+        print(f"Database error retrieving recent sessions: {e}")
         return []
 
 
-def get_documents():
-    """
-    Get all documents from the database.
-
-    Returns:
-        list: List of documents
-    """
-    try:
-        conn = sqlite3.connect(config.DB_PATH)
-        c = conn.cursor()
-        c.execute("SELECT name, chunks FROM documents ORDER BY timestamp DESC")
-        documents = [{"name": name, "chunks": chunks}
-                     for name, chunks in c.fetchall()]
-        conn.close()
-        return documents
-    except sqlite3.Error as e:
-        st.error(f"Database error retrieving documents: {e}")
-        return []
-
-
-def delete_chat_session(session_id):
+def delete_chat_session(session_id: str) -> bool:
     """
     Delete a chat session from the database.
 
@@ -281,29 +216,5 @@ def delete_chat_session(session_id):
         conn.close()
         return True
     except sqlite3.Error as e:
-        st.error(f"Error deleting session: {e}")
-        return False
-
-
-def reset_vector_database():
-    """
-    Reset the vector database by clearing all documents.
-
-    Returns:
-        bool: True if successful, False otherwise
-    """
-    try:
-        import shutil
-        shutil.rmtree(config.VECTORDB_PATH)
-        utils.ensure_directories([config.VECTORDB_PATH])
-
-        # Clear the documents table
-        conn = sqlite3.connect(config.DB_PATH)
-        c = conn.cursor()
-        c.execute("DELETE FROM documents")
-        conn.commit()
-        conn.close()
-        return True
-    except Exception as e:
-        st.error(f"Error resetting vector database: {e}")
+        print(f"Error deleting session: {e}")
         return False

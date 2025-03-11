@@ -7,16 +7,15 @@ import time
 import chromadb
 import requests
 import json
-import streamlit as st
+from typing import List, Tuple, Dict, Any, Optional, Generator, Union
 from chromadb.utils.embedding_functions.ollama_embedding_function import OllamaEmbeddingFunction
 from langchain_community.document_loaders import PyMuPDFLoader
 from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from sentence_transformers import CrossEncoder
-from streamlit.runtime.uploaded_file_manager import UploadedFile
 
-from . import config
-from . import utils
+import config
+from utils import helpers
 
 
 class RAGModel:
@@ -63,6 +62,9 @@ class RAGModel:
         # Initialize cross-encoder model
         self.encoder_model = CrossEncoder(
             "cross-encoder/ms-marco-MiniLM-L-12-v2")
+            
+        # Ensure vector DB directory exists
+        os.makedirs(self.db_dir, exist_ok=True)
 
     def get_vector_collection(self):
         """
@@ -73,7 +75,7 @@ class RAGModel:
         """
         try:
             ollama_ef = OllamaEmbeddingFunction(
-                url="http://localhost:11434/api/embeddings",
+                url=f"{config.OLLAMA_API_BASE}/api/embeddings",
                 model_name=self.embedding_model_name
             )
             chroma_client = chromadb.PersistentClient(path=self.db_dir)
@@ -83,34 +85,36 @@ class RAGModel:
                 metadata={"hnsw:space": "cosine"}
             )
         except Exception as e:
-            st.error(f"Error connecting to vector database: {e}")
+            print(f"Error connecting to vector database: {e}")
             return None
 
-    def process_document(self, uploaded_file: UploadedFile) -> list[Document]:
+    def process_document(self, file_path: str, file_name: str = "") -> List[Document]:
         """
-        Processes an uploaded PDF file by converting it to text chunks.
+        Processes a PDF file by converting it to text chunks.
 
         Args:
-            uploaded_file (UploadedFile): Uploaded PDF file
+            file_path (str): Path to the PDF file
+            file_name (str): Optional filename for metadata
 
         Returns:
-            list[Document]: List of document chunks
+            List[Document]: List of document chunks
         """
-        # Store uploaded file as a temp file
-        temp_file = tempfile.NamedTemporaryFile(
-            "wb", suffix=".pdf", delete=False)
-        temp_file.write(uploaded_file.read())
-        loader = PyMuPDFLoader(temp_file.name)
+        loader = PyMuPDFLoader(file_path)
         docs = loader.load()
-        os.unlink(temp_file.name)  # Delete temp file
+        
+        # Add filename to metadata if provided
+        if file_name:
+            for doc in docs:
+                doc.metadata["source"] = file_name
+                
         return self.text_splitter.split_documents(docs)
 
-    def add_to_vector_collection(self, all_splits: list[Document], file_name: str):
+    def add_to_vector_collection(self, all_splits: List[Document], file_name: str) -> int:
         """
         Adds document splits to a vector collection for semantic search.
 
         Args:
-            all_splits (list[Document]): Document chunks
+            all_splits (List[Document]): Document chunks
             file_name (str): Document file name
 
         Returns:
@@ -121,10 +125,13 @@ class RAGModel:
             return 0
 
         documents, metadatas, ids = [], [], []
+        normalized_filename = helpers.normalize_filename(file_name)
+        
         for idx, split in enumerate(all_splits):
             documents.append(split.page_content)
             metadatas.append(split.metadata)
-            ids.append(f"{file_name}_{idx}")
+            ids.append(f"{normalized_filename}_{idx}")
+            
         collection.upsert(
             documents=documents,
             metadatas=metadatas,
@@ -132,7 +139,7 @@ class RAGModel:
         )
         return len(documents)
 
-    def query_collection(self, prompt: str, n_results: int = 10):
+    def query_collection(self, prompt: str, n_results: int = 10) -> Dict:
         """
         Queries the vector collection with a given prompt.
 
@@ -141,7 +148,7 @@ class RAGModel:
             n_results (int): Number of results to return
 
         Returns:
-            dict: Query results
+            Dict: Query results
         """
         collection = self.get_vector_collection()
         if not collection:
@@ -149,17 +156,17 @@ class RAGModel:
 
         return collection.query(query_texts=[prompt], n_results=n_results)
 
-    def re_rank_documents(self, query: str, documents: list[str], top_k: int = 3) -> tuple[str, list[int]]:
+    def re_rank_documents(self, query: str, documents: List[str], top_k: int = 3) -> Tuple[str, List[int]]:
         """
         Re-ranks documents using a cross-encoder model for more accurate relevance scoring.
 
         Args:
             query (str): Query string
-            documents (list[str]): List of documents
+            documents (List[str]): List of documents
             top_k (int): Number of top documents to return
 
         Returns:
-            tuple[str, list[int]]: Relevant text and relevant text IDs
+            Tuple[str, List[int]]: Relevant text and relevant text IDs
         """
         if not documents or len(documents) == 0:
             return "", []
@@ -173,7 +180,7 @@ class RAGModel:
             relevant_text_ids.append(rank["corpus_id"])
         return relevant_text, relevant_text_ids
 
-    def call_llm(self, context: str, prompt: str):
+    def call_llm(self, context: str, prompt: str) -> Generator[str, None, None]:
         """
         Calls the language model with Digital Ocean GenAI Agent API to generate a response.
 
@@ -251,7 +258,7 @@ class RAGModel:
         except Exception as e:
             yield f"Error calling Digital Ocean GenAI API: {str(e)}"
 
-    def delete_document_from_vector_store(self, doc_name):
+    def delete_document_from_vector_store(self, doc_name: str) -> bool:
         """
         Delete a document from the vector store.
 
@@ -280,17 +287,17 @@ class RAGModel:
 
             # If no matches by metadata, try prefix matching
             if not doc_ids:
-                normalize_doc_name = utils.normalize_filename(doc_name)
+                normalize_doc_name = helpers.normalize_filename(doc_name)
                 doc_ids = [id for id in all_ids if id.startswith(
                     f"{normalize_doc_name}_")]
 
             # Delete the chunks
             if doc_ids:
                 collection.delete(ids=doc_ids)
-                st.info(f"Deleted {len(doc_ids)} chunks from vector store")
+                print(f"Deleted {len(doc_ids)} chunks from vector store")
                 return True
         except Exception as e:
-            st.warning(f"Vector store operation issue: {e}")
+            print(f"Vector store operation issue: {e}")
             return False
 
         return False
