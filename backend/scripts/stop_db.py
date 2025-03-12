@@ -1,19 +1,25 @@
 """
-Script to stop Qdrant and Elasticsearch containers.
+Script to stop all database services for the AI Document Assistant.
+Stops Qdrant, Elasticsearch, Kibana, and MinIO containers.
 """
 import sys
 import os
-import subprocess
 import time
+import subprocess
+from typing import List
 
 # Add parent directory to path to allow imports
 current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(current_dir)
 sys.path.insert(0, parent_dir)
 
-# Constants
-QDRANT_CONTAINER_NAME = "qdrant"
-ELASTICSEARCH_CONTAINER_NAME = "elasticsearch"
+# Constants for Docker containers
+CONTAINER_NAMES = [
+    "minio",      # Document Storage
+    "kibana",     # Elasticsearch UI
+    "elasticsearch",  # Keyword Search
+    "qdrant"      # Vector Database
+]
 
 
 def check_container_status(container_name):
@@ -85,25 +91,68 @@ def wait_for_container_stop(container_name, max_retries=10, retry_interval=1):
     return False
 
 
-def main():
-    """Main function to stop vector database containers."""
-    print("🛑 Stopping Vector Database Containers\n")
+def stop_all_containers():
+    """Stop all database containers in the correct order."""
+    print("🛑 Stopping all database containers")
 
-    # Stop Elasticsearch (stop this first since it's more resource-intensive)
-    es_stopped = stop_container(ELASTICSEARCH_CONTAINER_NAME)
-    if es_stopped:
-        wait_for_container_stop(ELASTICSEARCH_CONTAINER_NAME)
+    # Stop containers in a specific order (reverse of startup)
+    # This ensures dependencies are respected
+    stopped_containers = []
+    failed_containers = []
 
-    # Stop Qdrant
-    qdrant_stopped = stop_container(QDRANT_CONTAINER_NAME)
-    if qdrant_stopped:
-        wait_for_container_stop(QDRANT_CONTAINER_NAME)
+    for container in CONTAINER_NAMES:
+        print(f"\n📦 Processing container: {container}")
+        if stop_container(container):
+            wait_for_container_stop(container)
+            stopped_containers.append(container)
+        else:
+            failed_containers.append(container)
 
-    if es_stopped and qdrant_stopped:
-        print("\n✅ Successfully stopped all vector database containers")
+    # Print summary
+    if not failed_containers:
+        print("\n✅ All containers stopped successfully")
     else:
-        print("\n⚠️ Some containers may still be running")
-        print("   Check status with: python scripts/vector_db_status.py")
+        print(
+            f"\n⚠️ Stopped {len(stopped_containers)} containers, but {len(failed_containers)} failed")
+        print(f"Failed containers: {', '.join(failed_containers)}")
+
+
+def print_container_status():
+    """Print the status of all database containers."""
+    print("\n📊 Current Container Status:")
+
+    for container in CONTAINER_NAMES:
+        status = check_container_status(container)
+        if status == 'running':
+            print(f"  • {container}: ✅ Running")
+        elif status == 'stopped':
+            print(f"  • {container}: ⏹️ Stopped")
+        elif status == 'not_found':
+            print(f"  • {container}: ❓ Not found")
+        else:
+            print(f"  • {container}: ❌ Error checking status")
+
+
+def main():
+    """Main function to stop all database services."""
+    print("🔄 AI Document Assistant Database Shutdown")
+
+    try:
+        # First show current status
+        print_container_status()
+
+        # Stop all containers
+        stop_all_containers()
+
+        # Show final status
+        print_container_status()
+
+    except Exception as e:
+        print(f"❌ Error during shutdown: {e}")
+        sys.exit(1)
+
+    print("\n💾 Database services shutdown complete")
+    print("To restart the databases, run: python scripts/init_db.py")
 
 
 if __name__ == "__main__":

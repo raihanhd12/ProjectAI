@@ -1,5 +1,5 @@
 """
-Hybrid RAG model implementation combining vector and keyword search.
+Updates to HybridRAGModel to support user-specific operations.
 """
 import os
 import tempfile
@@ -20,7 +20,7 @@ from db.elastic_db import ElasticDB
 
 
 class HybridRAGModel:
-    """Hybrid Retrieval-Augmented Generation model implementation."""
+    """Hybrid Retrieval-Augmented Generation model implementation with user filtering."""
 
     def __init__(self,
                  llm_model_name=config.DEFAULT_LLM_MODEL,
@@ -104,13 +104,15 @@ class HybridRAGModel:
 
         return embeddings
 
-    def process_document(self, file_path: str, file_name: str = "") -> List[Dict[str, Any]]:
+    def process_document(self, file_path: str, file_name: str = "",
+                         metadata: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
         """
         Processes a PDF file by converting it to text chunks.
 
         Args:
             file_path (str): Path to the PDF file
             file_name (str): Optional filename for metadata
+            metadata (Dict): Additional metadata to include
 
         Returns:
             List[Dict[str, Any]]: List of document chunks with text and metadata
@@ -118,10 +120,15 @@ class HybridRAGModel:
         loader = PyMuPDFLoader(file_path)
         docs = loader.load()
 
-        # Add filename to metadata if provided
-        if file_name:
-            for doc in docs:
-                doc.metadata["source"] = file_name
+        # Add filename and additional metadata if provided
+        if metadata is None:
+            metadata = {}
+
+        for doc in docs:
+            doc.metadata["source"] = file_name
+            # Add any additional metadata
+            for key, value in metadata.items():
+                doc.metadata[key] = value
 
         # Split documents
         split_docs = self.text_splitter.split_documents(docs)
@@ -136,19 +143,21 @@ class HybridRAGModel:
 
         return chunks
 
-    def add_document(self, file_path: str, file_name: str) -> int:
+    def add_document(self, file_path: str, file_name: str,
+                     metadata: Optional[Dict[str, Any]] = None) -> int:
         """
         Add a document to both vector and keyword search.
 
         Args:
             file_path (str): Path to the PDF file
             file_name (str): Document file name
+            metadata (Dict): Additional metadata to include (e.g., user_id)
 
         Returns:
             int: Number of chunks added
         """
         # Process document into chunks
-        document_chunks = self.process_document(file_path, file_name)
+        document_chunks = self.process_document(file_path, file_name, metadata)
 
         if not document_chunks:
             return 0
@@ -169,13 +178,15 @@ class HybridRAGModel:
 
         return min(vector_chunks, elastic_chunks)
 
-    def hybrid_search(self, query: str, k: int = 10) -> Tuple[List[Dict[str, Any]], List[int]]:
+    def hybrid_search(self, query: str, k: int = 10,
+                      user_id: Optional[int] = None) -> Tuple[List[Dict[str, Any]], List[int]]:
         """
         Perform hybrid search using vector and keyword search.
 
         Args:
             query (str): Search query
             k (int): Number of results to return
+            user_id (Optional[int]): Filter results to specific user
 
         Returns:
             Tuple[List[Dict], List[int]]: Combined results and top indices
@@ -183,7 +194,8 @@ class HybridRAGModel:
         if not config.ENABLE_HYBRID_SEARCH:
             # Just use vector search if hybrid search is disabled
             query_embedding = self.get_embeddings([query])[0]
-            vector_results = self.vector_db.search(query_embedding, limit=k)
+            vector_results = self.vector_db.search(
+                query_embedding, limit=k, filter_metadata={"user_id": user_id} if user_id else None)
 
             if not vector_results:
                 return [], []
@@ -199,10 +211,12 @@ class HybridRAGModel:
 
         # Get vector search results
         query_embedding = self.get_embeddings([query])[0]
-        vector_results = self.vector_db.search(query_embedding, limit=k)
+        vector_results = self.vector_db.search(
+            query_embedding, limit=k, filter_metadata={"user_id": user_id} if user_id else None)
 
         # Get keyword search results
-        keyword_results = self.elastic_db.search(query, limit=k)
+        keyword_results = self.elastic_db.search(
+            query, limit=k, filter_metadata={"user_id": user_id} if user_id else None)
 
         # Combine results
         combined_results = self._merge_search_results(
@@ -390,29 +404,46 @@ class HybridRAGModel:
         except Exception as e:
             yield f"Error calling Digital Ocean GenAI API: {str(e)}"
 
-    def delete_document(self, doc_name: str) -> bool:
+    def delete_document(self, doc_name: str, user_id: Optional[int] = None) -> bool:
         """
         Delete a document from both vector and keyword search.
 
         Args:
             doc_name (str): Document name
+            user_id (Optional[int]): User ID to filter deletion (for multi-user systems)
 
         Returns:
             bool: True if successful
         """
-        vector_success = self.vector_db.delete_document(doc_name)
-        elastic_success = self.elastic_db.delete_document(doc_name)
+        vector_success = self.vector_db.delete_document(
+            doc_name, filter_metadata={"user_id": user_id} if user_id else None)
+
+        elastic_success = self.elastic_db.delete_document(
+            doc_name, filter_metadata={"user_id": user_id} if user_id else None)
 
         return vector_success and elastic_success
 
-    def reset_databases(self) -> bool:
+    def reset_databases(self, user_id: Optional[int] = None) -> bool:
         """
         Reset both vector and keyword search databases.
+        If user_id is provided, only delete that user's documents.
+
+        Args:
+            user_id (Optional[int]): User ID to filter deletion
 
         Returns:
             bool: True if successful
         """
-        vector_success = self.vector_db.reset()
-        elastic_success = self.elastic_db.reset()
+        if user_id:
+            # Delete all documents for this user
+            vector_success = self.vector_db.delete_by_filter(
+                filter_metadata={"user_id": user_id})
+
+            elastic_success = self.elastic_db.delete_by_filter(
+                filter_metadata={"user_id": user_id})
+        else:
+            # Reset entire databases
+            vector_success = self.vector_db.reset()
+            elastic_success = self.elastic_db.reset()
 
         return vector_success and elastic_success

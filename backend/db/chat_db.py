@@ -1,5 +1,5 @@
 """
-Chat database operations with MySQL database.
+Chat database operations with MySQL database, now with user associations.
 """
 import datetime
 import json
@@ -27,12 +27,13 @@ def init_db():
         return False
 
 
-def create_session(db: Session, session_id: Optional[str] = None) -> str:
+def create_session(db: Session, user_id: Optional[int] = None, session_id: Optional[str] = None) -> str:
     """
     Create a new chat session.
 
     Args:
         db: Database session
+        user_id: User ID to associate with the session
         session_id: Custom session ID (optional)
 
     Returns:
@@ -48,7 +49,7 @@ def create_session(db: Session, session_id: Optional[str] = None) -> str:
         return session_id
 
     # Create new session
-    new_session = ChatSession(session_id=session_id)
+    new_session = ChatSession(session_id=session_id, user_id=user_id)
     db.add(new_session)
     db.commit()
     return session_id
@@ -62,7 +63,8 @@ def save_message(
     thinking_content: Optional[str] = None,
     query_results: Optional[Dict] = None,
     relevant_text_ids: Optional[List] = None,
-    relevant_text: Optional[str] = None
+    relevant_text: Optional[str] = None,
+    user_id: Optional[int] = None
 ) -> bool:
     """
     Save a message to the database.
@@ -76,6 +78,7 @@ def save_message(
         query_results: Query results from vector store (optional)
         relevant_text_ids: IDs of relevant text chunks (optional)
         relevant_text: Relevant text content (optional)
+        user_id: User ID to associate with the session (optional)
 
     Returns:
         bool: True if successful, False otherwise
@@ -86,7 +89,14 @@ def save_message(
             ChatSession.session_id == session_id).first()
         if not session:
             # Create session if it doesn't exist
-            session_id = create_session(db, session_id)
+            session_id = create_session(db, user_id, session_id)
+            session = db.query(ChatSession).filter(
+                ChatSession.session_id == session_id).first()
+
+        # Update user_id if provided and not already set
+        if user_id and not session.user_id:
+            session.user_id = user_id
+            db.commit()
 
         # Convert complex objects to JSON strings
         query_results_json = json.dumps(
@@ -170,23 +180,25 @@ def get_chat_history(db: Session, session_id: str) -> List[Dict[str, Any]]:
         return []
 
 
-def get_recent_chat_sessions(db: Session, limit: int = 5) -> List[Tuple]:
+def get_recent_chat_sessions(db: Session, user_id: Optional[int] = None, limit: int = 5) -> List[Tuple]:
     """
     Get recent chat sessions.
 
     Args:
         db: Database session
+        user_id: Optional user ID to filter sessions
         limit: Maximum number of sessions to return
 
     Returns:
         List[Tuple]: List of recent chat sessions
     """
     try:
-        # Get sessions with first question and ordered by last message time
-        sessions = db.query(
+        # Build the query
+        query = db.query(
             ChatSession.session_id,
             ChatSession.created_at,
             ChatSession.last_message_at,
+            ChatSession.user_id,
             # Subquery to get the first user message for each session
             db.query(ChatMessage.content)
             .filter(
@@ -197,16 +209,27 @@ def get_recent_chat_sessions(db: Session, limit: int = 5) -> List[Tuple]:
             .limit(1)
             .scalar_subquery()
             .label('first_question')
-        ).order_by(
+        )
+
+        # Filter by user_id if provided
+        if user_id:
+            query = query.filter(ChatSession.user_id == user_id)
+
+        # Order and limit
+        query = query.order_by(
             desc(ChatSession.last_message_at)
-        ).limit(limit).all()
+        ).limit(limit)
+
+        # Execute query
+        sessions = query.all()
 
         return [
             (
                 session.session_id,
                 session.created_at.isoformat() if session.created_at else None,
                 session.last_message_at.isoformat() if session.last_message_at else None,
-                session.first_question or "New conversation"
+                session.first_question or "New conversation",
+                session.user_id
             )
             for session in sessions
         ]
@@ -215,21 +238,28 @@ def get_recent_chat_sessions(db: Session, limit: int = 5) -> List[Tuple]:
         return []
 
 
-def delete_chat_session(db: Session, session_id: str) -> bool:
+def delete_chat_session(db: Session, session_id: str, user_id: Optional[int] = None) -> bool:
     """
     Delete a chat session and all its messages.
 
     Args:
         db: Database session
         session_id: Session ID
+        user_id: Optional user ID to ensure ownership
 
     Returns:
         bool: True if successful, False otherwise
     """
     try:
         # Find the session
-        session = db.query(ChatSession).filter(
-            ChatSession.session_id == session_id).first()
+        query = db.query(ChatSession).filter(
+            ChatSession.session_id == session_id)
+
+        # Add user filter if provided
+        if user_id:
+            query = query.filter(ChatSession.user_id == user_id)
+
+        session = query.first()
         if not session:
             return False
 
@@ -241,3 +271,22 @@ def delete_chat_session(db: Session, session_id: str) -> bool:
         db.rollback()
         print(f"Error deleting session: {e}")
         return False
+
+
+def get_user_chat_count(db: Session, user_id: int) -> int:
+    """
+    Get the number of chat sessions for a user.
+
+    Args:
+        db: Database session
+        user_id: User ID
+
+    Returns:
+        int: Number of chat sessions
+    """
+    try:
+        return db.query(ChatSession).filter(
+            ChatSession.user_id == user_id).count()
+    except Exception as e:
+        print(f"Database error counting user chat sessions: {e}")
+        return 0

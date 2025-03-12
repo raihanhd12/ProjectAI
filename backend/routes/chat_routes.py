@@ -1,5 +1,5 @@
 """
-Chat routes for the AI Document Assistant API.
+Chat routes for the AI Document Assistant API with user authentication.
 """
 from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks, Response
 from fastapi.responses import StreamingResponse
@@ -13,9 +13,10 @@ from sse_starlette.sse import EventSourceResponse
 # Import models
 from models.hybrid_rag_model import HybridRAGModel
 from db import chat_db
+from db.models import User
 
 # Import dependencies
-from dependencies import verify_api_token, get_db_session
+from dependencies import get_current_user, get_db_session
 
 # Create router
 router = APIRouter()
@@ -58,7 +59,7 @@ class ChatMessage(BaseModel):
 async def get_chat_history(
     session_id: Optional[str] = None,
     db: Session = Depends(get_db_session),
-    token: str = Depends(verify_api_token)
+    current_user: User = Depends(get_current_user)
 ):
     """
     Get chat history for a session.
@@ -70,16 +71,27 @@ async def get_chat_history(
         List of chat messages
     """
     try:
-        # If no session ID provided, use the most recent one
+        # If no session ID provided, use the most recent one for this user
         if not session_id:
-            recent_sessions = chat_db.get_recent_chat_sessions(db, 1)
+            recent_sessions = chat_db.get_recent_chat_sessions(
+                db, current_user.id, 1)
             if recent_sessions:
                 session_id = recent_sessions[0][0]
             else:
                 return {"messages": [], "session_id": None}
 
+        # Verify the session belongs to this user if it exists
+        if session_id:
+            sessions = chat_db.get_recent_chat_sessions(db, current_user.id)
+            session_ids = [s[0] for s in sessions]
+            if session_id not in session_ids:
+                raise HTTPException(
+                    status_code=403, detail="You don't have access to this session")
+
         messages = chat_db.get_chat_history(db, session_id)
         return {"messages": messages, "session_id": session_id}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"Failed to get chat history: {str(e)}")
@@ -89,10 +101,10 @@ async def get_chat_history(
 async def get_chat_sessions(
     limit: int = 5,
     db: Session = Depends(get_db_session),
-    token: str = Depends(verify_api_token)
+    current_user: User = Depends(get_current_user)
 ):
     """
-    Get recent chat sessions.
+    Get recent chat sessions for the current user.
 
     Args:
         limit: Maximum number of sessions to return
@@ -101,10 +113,10 @@ async def get_chat_sessions(
         List of recent chat sessions
     """
     try:
-        sessions = chat_db.get_recent_chat_sessions(db, limit)
+        sessions = chat_db.get_recent_chat_sessions(db, current_user.id, limit)
         formatted_sessions = []
 
-        for session_id, start_time, last_time, first_question in sessions:
+        for session_id, start_time, last_time, first_question, user_id in sessions:
             formatted_sessions.append({
                 "session_id": session_id,
                 "start_time": start_time,
@@ -122,10 +134,10 @@ async def get_chat_sessions(
 async def create_chat_session(
     session_data: NewSession = None,
     db: Session = Depends(get_db_session),
-    token: str = Depends(verify_api_token)
+    current_user: User = Depends(get_current_user)
 ):
     """
-    Create a new chat session.
+    Create a new chat session for the current user.
 
     Args:
         session_data: Optional custom session ID
@@ -135,7 +147,8 @@ async def create_chat_session(
     """
     try:
         session_id = session_data.session_id if session_data else None
-        new_session_id = chat_db.create_session(db, session_id)
+        new_session_id = chat_db.create_session(
+            db, current_user.id, session_id)
         return {"session_id": new_session_id}
     except Exception as e:
         raise HTTPException(
@@ -146,10 +159,10 @@ async def create_chat_session(
 async def delete_chat_session(
     session_id: str,
     db: Session = Depends(get_db_session),
-    token: str = Depends(verify_api_token)
+    current_user: User = Depends(get_current_user)
 ):
     """
-    Delete a chat session.
+    Delete a chat session for the current user.
 
     Args:
         session_id: Session ID to delete
@@ -158,12 +171,21 @@ async def delete_chat_session(
         Deletion status
     """
     try:
-        success = chat_db.delete_chat_session(db, session_id)
+        # Verify the session belongs to this user
+        sessions = chat_db.get_recent_chat_sessions(db, current_user.id)
+        session_ids = [s[0] for s in sessions]
+        if session_id not in session_ids:
+            raise HTTPException(
+                status_code=403, detail="You don't have access to this session")
+
+        success = chat_db.delete_chat_session(db, session_id, current_user.id)
         if success:
             return {"status": "success", "message": f"Session {session_id} deleted successfully"}
         else:
             raise HTTPException(
                 status_code=500, detail="Failed to delete session")
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"Failed to delete session: {str(e)}")
@@ -173,7 +195,7 @@ async def delete_chat_session(
 async def query_chat(
     chat_query: ChatQuery,
     db: Session = Depends(get_db_session),
-    token: str = Depends(verify_api_token)
+    current_user: User = Depends(get_current_user)
 ):
     """
     Query the RAG model (non-streaming version).
@@ -185,9 +207,19 @@ async def query_chat(
         Model response
     """
     try:
+        # Check if session exists and belongs to user
+        if chat_query.session_id:
+            sessions = chat_db.get_recent_chat_sessions(db, current_user.id)
+            session_ids = [s[0] for s in sessions]
+            if chat_query.session_id not in session_ids:
+                # Create a new session instead
+                chat_query.session_id = None
+
         # Save user message
-        session_id = chat_query.session_id or chat_db.create_session(db)
-        chat_db.save_message(db, session_id, "user", chat_query.prompt)
+        session_id = chat_query.session_id or chat_db.create_session(
+            db, current_user.id)
+        chat_db.save_message(db, session_id, "user",
+                             chat_query.prompt, user_id=current_user.id)
 
         # Perform hybrid search
         retrieval_results, relevant_text_ids = rag_model.hybrid_search(
@@ -228,7 +260,8 @@ async def query_chat(
                 thinking_content,
                 {"results": [doc["id"] for doc in retrieval_results]},
                 relevant_text_ids,
-                relevant_text
+                relevant_text,
+                user_id=current_user.id
             )
 
             return {
@@ -263,7 +296,7 @@ async def query_chat(
 async def stream_chat_query(
     chat_query: ChatQuery,
     db: Session = Depends(get_db_session),
-    token: str = Depends(verify_api_token)
+    current_user: User = Depends(get_current_user)
 ):
     """
     Stream the RAG model response.
@@ -276,9 +309,20 @@ async def stream_chat_query(
     """
     async def event_generator():
         try:
+            # Check if session exists and belongs to user
+            if chat_query.session_id:
+                sessions = chat_db.get_recent_chat_sessions(
+                    db, current_user.id)
+                session_ids = [s[0] for s in sessions]
+                if chat_query.session_id not in session_ids:
+                    # Create a new session instead
+                    chat_query.session_id = None
+
             # Save user message
-            session_id = chat_query.session_id or chat_db.create_session(db)
-            chat_db.save_message(db, session_id, "user", chat_query.prompt)
+            session_id = chat_query.session_id or chat_db.create_session(
+                db, current_user.id)
+            chat_db.save_message(db, session_id, "user",
+                                 chat_query.prompt, user_id=current_user.id)
 
             # Perform hybrid search
             retrieval_results, relevant_text_ids = rag_model.hybrid_search(
@@ -374,7 +418,8 @@ async def stream_chat_query(
                     thinking_content,
                     {"results": [doc["id"] for doc in retrieval_results]},
                     relevant_text_ids,
-                    relevant_text
+                    relevant_text,
+                    user_id=current_user.id
                 )
 
                 # Send complete message
@@ -406,7 +451,8 @@ async def stream_chat_query(
                     "No relevant documents found in the vector database.",
                     None,
                     None,
-                    None
+                    None,
+                    user_id=current_user.id
                 )
 
         except Exception as e:

@@ -18,13 +18,27 @@ class Document(Base):
     chunks = Column(Integer, nullable=False)
     timestamp = Column(DateTime, default=datetime.utcnow)
 
+    # Add user association
+    user_id = Column(Integer, ForeignKey(
+        "users.id"), nullable=True, index=True)
+    user = relationship("User", back_populates="documents")
+
+    # Add object storage reference
+    object_name = Column(String(255), nullable=True)
+    file_size = Column(Integer, nullable=True)
+    content_type = Column(String(100), nullable=True)
+
     def to_dict(self):
         """Convert model to dictionary."""
         return {
             "id": self.id,
             "name": self.name,
             "chunks": self.chunks,
-            "timestamp": self.timestamp.isoformat() if self.timestamp else None
+            "timestamp": self.timestamp.isoformat() if self.timestamp else None,
+            "user_id": self.user_id,
+            "object_name": self.object_name,
+            "file_size": self.file_size,
+            "content_type": self.content_type
         }
 
 
@@ -38,6 +52,11 @@ class ChatSession(Base):
     last_message_at = Column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
+    # Add user association
+    user_id = Column(Integer, ForeignKey(
+        "users.id"), nullable=True, index=True)
+    user = relationship("User", back_populates="chat_sessions")
+
     # Relationship to messages
     messages = relationship(
         "ChatMessage", back_populates="session", cascade="all, delete-orphan")
@@ -47,6 +66,7 @@ class ChatSession(Base):
         return {
             "id": self.id,
             "session_id": self.session_id,
+            "user_id": self.user_id,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "last_message_at": self.last_message_at.isoformat() if self.last_message_at else None
         }
@@ -94,6 +114,12 @@ class User(Base):
     password_hash = Column(String(255), nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     is_active = Column(Boolean, default=True)
+
+    # Add relationships
+    documents = relationship(
+        "Document", back_populates="user", cascade="all, delete-orphan")
+    chat_sessions = relationship(
+        "ChatSession", back_populates="user", cascade="all, delete-orphan")
 
     def verify_password(self, password):
         """Verify password against stored hash."""

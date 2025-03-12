@@ -5,6 +5,7 @@ fastapi
 langchain
 langchain-community
 langchain-text-splitters
+minio
 passlib[bcrypt]
 pydantic
 PyJWT

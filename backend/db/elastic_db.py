@@ -1,5 +1,5 @@
 """
-Elasticsearch database operations.
+Elasticsearch database operations with user filtering.
 """
 import os
 import json
@@ -12,7 +12,7 @@ from utils import helpers
 
 
 class ElasticDB:
-    """Elasticsearch database manager for keyword search"""
+    """Elasticsearch database manager for keyword search with user filtering"""
 
     def __init__(self, index_name="documents"):
         """
@@ -71,7 +71,11 @@ class ElasticDB:
                             },
                             "metadata": {
                                 "type": "object",
-                                "enabled": True
+                                "properties": {
+                                    "user_id": {"type": "keyword"},
+                                    "page": {"type": "integer"},
+                                    "source": {"type": "keyword"}
+                                }
                             }
                         }
                     }
@@ -121,30 +125,58 @@ class ElasticDB:
 
     def search(self,
                query: str,
-               limit: int = 10) -> List[Dict[str, Any]]:
+               limit: int = 10,
+               filter_metadata: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
         """
         Search for documents using keyword search.
 
         Args:
             query: Search query
             limit: Maximum number of results to return
+            filter_metadata: Optional metadata to filter results (e.g., user_id)
 
         Returns:
             List of document chunks with relevance scores
         """
+        # Build the search query
+        search_query = {
+            "query": {
+                "bool": {
+                    "must": [
+                        {
+                            "multi_match": {
+                                "query": query,
+                                "fields": ["text^3", "metadata.*"],
+                                "type": "best_fields",
+                                "fuzziness": "AUTO"
+                            }
+                        }
+                    ]
+                }
+            },
+            "size": limit
+        }
+
+        # Add metadata filters if provided
+        if filter_metadata and isinstance(filter_metadata, dict):
+            filter_clauses = []
+
+            for key, value in filter_metadata.items():
+                if value is not None:
+                    filter_clauses.append({
+                        "term": {
+                            # Convert to string for consistent matching
+                            f"metadata.{key}": str(value)
+                        }
+                    })
+
+            if filter_clauses:
+                search_query["query"]["bool"]["filter"] = filter_clauses
+
+        # Execute search
         response = self.client.search(
             index=self.index_name,
-            body={
-                "query": {
-                    "multi_match": {
-                        "query": query,
-                        "fields": ["text^3", "metadata.*"],
-                        "type": "best_fields",
-                        "fuzziness": "AUTO"
-                    }
-                },
-                "size": limit
-            }
+            body=search_query
         )
 
         documents = []
@@ -159,27 +191,52 @@ class ElasticDB:
 
         return documents
 
-    def delete_document(self, document_name: str) -> bool:
+    def delete_document(self, document_name: str,
+                        filter_metadata: Optional[Dict[str, Any]] = None) -> bool:
         """
         Delete all chunks belonging to a document.
 
         Args:
             document_name: Name of document to delete
+            filter_metadata: Optional metadata to filter deletion (e.g., user_id)
 
         Returns:
             bool: True if successful
         """
         try:
-            # Delete by query matching the document name
+            # Build the query for deletion
+            delete_query = {
+                "bool": {
+                    "must": [
+                        {
+                            "match": {
+                                "source": document_name
+                            }
+                        }
+                    ]
+                }
+            }
+
+            # Add metadata filters if provided
+            if filter_metadata and isinstance(filter_metadata, dict):
+                filter_clauses = []
+
+                for key, value in filter_metadata.items():
+                    if value is not None:
+                        filter_clauses.append({
+                            "term": {
+                                # Convert to string for consistent matching
+                                f"metadata.{key}": str(value)
+                            }
+                        })
+
+                if filter_clauses:
+                    delete_query["bool"]["filter"] = filter_clauses
+
+            # Delete by query
             response = self.client.delete_by_query(
                 index=self.index_name,
-                body={
-                    "query": {
-                        "match": {
-                            "source": document_name
-                        }
-                    }
-                },
+                body={"query": delete_query},
                 refresh=True
             )
 
@@ -189,6 +246,56 @@ class ElasticDB:
 
         except Exception as e:
             print(f"Error deleting document from Elasticsearch: {e}")
+            return False
+
+    def delete_by_filter(self, filter_metadata: Dict[str, Any]) -> bool:
+        """
+        Delete documents by metadata filter.
+
+        Args:
+            filter_metadata: Metadata to filter deletion (e.g., user_id)
+
+        Returns:
+            bool: True if successful
+        """
+        try:
+            if not filter_metadata:
+                return False
+
+            # Build a bool query with filters
+            filter_clauses = []
+
+            for key, value in filter_metadata.items():
+                if value is not None:
+                    filter_clauses.append({
+                        "term": {
+                            # Convert to string for consistent matching
+                            f"metadata.{key}": str(value)
+                        }
+                    })
+
+            if not filter_clauses:
+                return False
+
+            delete_query = {
+                "bool": {
+                    "filter": filter_clauses
+                }
+            }
+
+            # Delete by query
+            response = self.client.delete_by_query(
+                index=self.index_name,
+                body={"query": delete_query},
+                refresh=True
+            )
+
+            deleted = response.get("deleted", 0)
+            print(f"Deleted {deleted} chunks by filter from Elasticsearch")
+            return True  # Return true regardless of count
+
+        except Exception as e:
+            print(f"Error deleting by filter from Elasticsearch: {e}")
             return False
 
     def reset(self) -> bool:
