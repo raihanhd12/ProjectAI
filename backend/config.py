@@ -17,7 +17,7 @@ DB_CONFIG = {
     "port": int(os.getenv("MYSQL_PORT", "3306")),
     "user": os.getenv("MYSQL_USER", "root"),
     "password": os.getenv("MYSQL_PASSWORD", ""),
-    "database": os.getenv("MYSQL_DATABASE", "ai_doc_assistant"),
+    "database": os.getenv("MYSQL_DATABASE", "project_ai"),
 }
 
 # JWT Settings
@@ -26,12 +26,33 @@ JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
 ACCESS_TOKEN_EXPIRE_MINUTES = int(
     os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
 
-# Vector DB path
+# Vector DB path (legacy - kept for compatibility)
 VECTORDB_PATH = os.getenv(
     "VECTORDB_PATH", os.path.join(BASE_DIR, "..", "db", "vector"))
 
 # Make sure the directories exist
 os.makedirs(VECTORDB_PATH, exist_ok=True)
+
+# Qdrant configuration
+QDRANT_URL = os.getenv("QDRANT_URL", "http://localhost:6333")
+QDRANT_API_KEY = os.getenv("QDRANT_API_KEY", "")
+# Default for nomic-embed
+EMBEDDING_DIMENSION = int(os.getenv("EMBEDDING_DIMENSION", "384"))
+
+# Elasticsearch configuration
+ELASTICSEARCH_URL = os.getenv("ELASTICSEARCH_URL", "http://localhost:9200")
+ELASTICSEARCH_USER = os.getenv("ELASTICSEARCH_USER", "")
+ELASTICSEARCH_PASSWORD = os.getenv("ELASTICSEARCH_PASSWORD", "")
+ELASTICSEARCH_VERIFY_CERTS = os.getenv(
+    "ELASTICSEARCH_VERIFY_CERTS", "False").lower() == "true"
+
+# Hybrid search configuration
+ENABLE_HYBRID_SEARCH = os.getenv(
+    "ENABLE_HYBRID_SEARCH", "True").lower() == "true"
+# Weight for vector search results
+VECTOR_WEIGHT = float(os.getenv("VECTOR_WEIGHT", "0.7"))
+# Weight for keyword search results
+KEYWORD_WEIGHT = float(os.getenv("KEYWORD_WEIGHT", "0.3"))
 
 # Model configuration
 AVAILABLE_LLM_MODELS = os.getenv("AVAILABLE_LLM_MODELS", "").split(",")

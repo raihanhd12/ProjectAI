@@ -1,5 +1,6 @@
-chromadb
+# Vector search dan hybrid search components
 cryptography
+elasticsearch
 fastapi
 langchain
 langchain-community
@@ -12,6 +13,7 @@ pymysql
 python-dotenv
 python-jose[cryptography]
 python-multipart
+qdrant-client
 requests
 sentence-transformers
 SQLAlchemy

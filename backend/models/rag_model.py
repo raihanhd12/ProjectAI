@@ -62,7 +62,7 @@ class RAGModel:
         # Initialize cross-encoder model
         self.encoder_model = CrossEncoder(
             "cross-encoder/ms-marco-MiniLM-L-12-v2")
-            
+
         # Ensure vector DB directory exists
         os.makedirs(self.db_dir, exist_ok=True)
 
@@ -101,12 +101,12 @@ class RAGModel:
         """
         loader = PyMuPDFLoader(file_path)
         docs = loader.load()
-        
+
         # Add filename to metadata if provided
         if file_name:
             for doc in docs:
                 doc.metadata["source"] = file_name
-                
+
         return self.text_splitter.split_documents(docs)
 
     def add_to_vector_collection(self, all_splits: List[Document], file_name: str) -> int:
@@ -126,12 +126,12 @@ class RAGModel:
 
         documents, metadatas, ids = [], [], []
         normalized_filename = helpers.normalize_filename(file_name)
-        
+
         for idx, split in enumerate(all_splits):
             documents.append(split.page_content)
             metadatas.append(split.metadata)
             ids.append(f"{normalized_filename}_{idx}")
-            
+
         collection.upsert(
             documents=documents,
             metadatas=metadatas,

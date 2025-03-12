@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from sse_starlette.sse import EventSourceResponse
 
 # Import models
-from models.rag_model import RAGModel
+from models.hybrid_rag_model import HybridRAGModel
 from db import chat_db
 
 # Import dependencies
@@ -21,7 +21,7 @@ from dependencies import verify_api_token, get_db_session
 router = APIRouter()
 
 # Initialize RAG model
-rag_model = RAGModel()
+rag_model = HybridRAGModel()
 
 # Define request models
 
@@ -41,7 +41,7 @@ class NewSession(BaseModel):
 
 class RetrievalResult(BaseModel):
     """Document retrieval result model."""
-    query_results: Optional[Dict[str, Any]] = None
+    retrieval_results: Optional[List[Dict[str, Any]]] = None
     relevant_text: Optional[str] = None
     relevant_text_ids: Optional[List[Any]] = None
 
@@ -189,13 +189,14 @@ async def query_chat(
         session_id = chat_query.session_id or chat_db.create_session(db)
         chat_db.save_message(db, session_id, "user", chat_query.prompt)
 
-        # Retrieve documents
-        query_results = rag_model.query_collection(chat_query.prompt)
+        # Perform hybrid search
+        retrieval_results, relevant_text_ids = rag_model.hybrid_search(
+            chat_query.prompt)
 
-        if query_results and len(query_results.get("documents", [[]])[0]) > 0:
-            context = query_results.get("documents")[0]
-            relevant_text, relevant_text_ids = rag_model.re_rank_documents(
-                chat_query.prompt, context)
+        if retrieval_results and len(retrieval_results) > 0:
+            # Extract relevant text from search results
+            relevant_text = "\n\n".join([doc["text"]
+                                        for doc in retrieval_results])
 
             # Generate response
             response_content = ""
@@ -225,7 +226,7 @@ async def query_chat(
                 "assistant",
                 response_content,
                 thinking_content,
-                query_results,
+                {"results": [doc["id"] for doc in retrieval_results]},
                 relevant_text_ids,
                 relevant_text
             )
@@ -237,7 +238,7 @@ async def query_chat(
                     "content": response_content,
                     "thinking_content": thinking_content,
                     "retrieval_result": {
-                        "query_results": query_results,
+                        "retrieval_results": retrieval_results,
                         "relevant_text": relevant_text,
                         "relevant_text_ids": relevant_text_ids
                     }
@@ -279,20 +280,21 @@ async def stream_chat_query(
             session_id = chat_query.session_id or chat_db.create_session(db)
             chat_db.save_message(db, session_id, "user", chat_query.prompt)
 
-            # Retrieve documents
-            query_results = rag_model.query_collection(chat_query.prompt)
+            # Perform hybrid search
+            retrieval_results, relevant_text_ids = rag_model.hybrid_search(
+                chat_query.prompt)
 
-            if query_results and len(query_results.get("documents", [[]])[0]) > 0:
-                context = query_results.get("documents")[0]
-                relevant_text, relevant_text_ids = rag_model.re_rank_documents(
-                    chat_query.prompt, context)
+            if retrieval_results and len(retrieval_results) > 0:
+                # Extract relevant text from search results
+                relevant_text = "\n\n".join(
+                    [doc["text"] for doc in retrieval_results])
 
                 # Send retrieval results
                 retrieval_data = {
                     "type": "retrieval",
                     "session_id": session_id,
                     "data": {
-                        "query_results": query_results,
+                        "retrieval_results": retrieval_results,
                         "relevant_text": relevant_text,
                         "relevant_text_ids": relevant_text_ids
                     }
@@ -359,7 +361,7 @@ async def stream_chat_query(
                         # Send content update
                         content_data = {
                             "type": "content",
-                            "data": full_response
+                            "data": chunk
                         }
                         yield json.dumps(content_data)
 
@@ -370,7 +372,7 @@ async def stream_chat_query(
                     "assistant",
                     full_response,
                     thinking_content,
-                    query_results,
+                    {"results": [doc["id"] for doc in retrieval_results]},
                     relevant_text_ids,
                     relevant_text
                 )

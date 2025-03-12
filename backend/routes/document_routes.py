@@ -11,7 +11,7 @@ import json
 from sqlalchemy.orm import Session
 
 # Import models
-from models.rag_model import RAGModel
+from models.hybrid_rag_model import HybridRAGModel
 from db import document_db
 
 # Import dependencies
@@ -21,7 +21,7 @@ from dependencies import verify_api_token, get_db_session
 router = APIRouter()
 
 # Initialize RAG model
-rag_model = RAGModel()
+rag_model = HybridRAGModel()
 
 
 @router.get("/")
@@ -78,15 +78,10 @@ async def upload_documents(
                 temp_path = temp_file.name
 
             # Process document
-            document_chunks = rag_model.process_document(
-                temp_path, file.filename)
-
-            # Add to vector collection
-            chunks_added = rag_model.add_to_vector_collection(
-                document_chunks, file.filename)
+            chunks_added = rag_model.add_document(temp_path, file.filename)
 
             # Save document metadata to DB
-            document_db.save_document(db, file.filename, len(document_chunks))
+            document_db.save_document(db, file.filename, chunks_added)
 
             # Clean up temp file
             os.unlink(temp_path)
@@ -94,7 +89,6 @@ async def upload_documents(
             results.append({
                 "filename": file.filename,
                 "status": "success",
-                "chunks_processed": len(document_chunks),
                 "chunks_added": chunks_added
             })
 
@@ -124,9 +118,8 @@ async def delete_document(
         Deletion status
     """
     try:
-        # Delete from vector store
-        vector_store_success = rag_model.delete_document_from_vector_store(
-            document_name)
+        # Delete from vector and elastic databases
+        vector_store_success = rag_model.delete_document(document_name)
 
         # Delete from database
         db_success = document_db.delete_document(db, document_name)
@@ -136,7 +129,7 @@ async def delete_document(
         else:
             raise HTTPException(
                 status_code=500,
-                detail=f"Partial failure deleting document: Vector store: {vector_store_success}, Database: {db_success}"
+                detail=f"Partial failure deleting document: Vector stores: {vector_store_success}, Database: {db_success}"
             )
     except Exception as e:
         raise HTTPException(
@@ -155,15 +148,22 @@ async def reset_vector_database(
         Reset status
     """
     try:
-        success = document_db.reset_vector_database(db)
-        if success:
-            # Re-initialize the RAG model with a fresh vector store
+        # Reset vector and elastic databases
+        vector_success = rag_model.reset_databases()
+
+        # Reset document database
+        db_success = document_db.reset_vector_database(db)
+
+        if vector_success and db_success:
+            # Re-initialize the RAG model
             global rag_model
-            rag_model = RAGModel()
-            return {"status": "success", "message": "Vector database has been reset"}
+            rag_model = HybridRAGModel()
+            return {"status": "success", "message": "Vector databases have been reset"}
         else:
             raise HTTPException(
-                status_code=500, detail="Failed to reset vector database")
+                status_code=500,
+                detail=f"Partial failure resetting databases: Vector stores: {vector_success}, Database: {db_success}"
+            )
     except Exception as e:
         raise HTTPException(
-            status_code=500, detail=f"Failed to reset vector database: {str(e)}")
+            status_code=500, detail=f"Failed to reset vector databases: {str(e)}")
