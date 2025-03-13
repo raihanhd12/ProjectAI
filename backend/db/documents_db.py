@@ -56,9 +56,12 @@ def save_document(db: Session, name: str, user_id: Optional[int] = None,
         db.add(new_doc)
         db.commit()
         return True
+
     except Exception as e:
         db.rollback()
-        print(f"Error saving document: {e}")
+        print(f"Error saving document: {str(e)}")  # Print full error
+        import traceback
+        traceback.print_exc()  # Print stack trace
         return False
 
 
@@ -94,25 +97,20 @@ def delete_document(db: Session, doc_name: str, user_id: Optional[int] = None) -
         return False
 
 
-def get_documents(db: Session, user_id: Optional[int] = None) -> List[Dict[str, Any]]:
-    """
-    Get all documents from the database.
-
-    Args:
-        db: Database session
-        user_id: Optional user ID to restrict to user's documents
-
-    Returns:
-        List[Dict[str, Any]]: List of documents
-    """
+def get_documents(db: Session, user_id: Optional[int] = None):
     try:
         query = db.query(Document).order_by(desc(Document.timestamp))
 
-        # Filter by user if provided
+        # Add debug printing
+        print(f"Looking for documents with user_id: {user_id}")
+
         if user_id:
             query = query.filter(Document.user_id == user_id)
 
         documents = query.all()
+        print(f"Found {len(documents)} documents")
+
+        # Check if to_dict() is implemented
         return [doc.to_dict() for doc in documents]
     except Exception as e:
         print(f"Database error retrieving documents: {e}")

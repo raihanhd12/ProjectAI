@@ -76,6 +76,17 @@ async def upload_document(
             file_size=file_size,
             content_type=file.content_type
         )
+        save_result = documents_db.save_document(
+            db,
+            file.filename,
+            user_id=current_user.id,
+            object_name=object_name,
+            file_size=file_size,
+            content_type=file.content_type
+        )
+        if not save_result:
+            raise HTTPException(
+                status_code=500, detail="Failed to save document metadata to database")
 
         # Generate download URL
         try:

@@ -56,6 +56,18 @@ class Document(Base):
     chunks = relationship(
         "DocumentChunk", back_populates="document", cascade="all, delete-orphan")
 
+    # Add this method
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "name": self.name,
+            "user_id": self.user_id,
+            "object_name": self.object_name,
+            "file_size": self.file_size,
+            "content_type": self.content_type,
+            "timestamp": self.timestamp.isoformat() if self.timestamp else None
+        }
+
 
 class DocumentChunk(Base):
     __tablename__ = "document_chunks"
@@ -64,7 +76,7 @@ class DocumentChunk(Base):
     chunk_index = Column(Integer, nullable=False)
     chunk_text = Column(Text, nullable=False)
     embedding_id = Column(String(255), nullable=True)
-    metadata = Column(JSON, nullable=True)
+    chunk_metadata = Column(JSON, nullable=True)
 
     # Relationships
     document = relationship("Document", back_populates="chunks")
