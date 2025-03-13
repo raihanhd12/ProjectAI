@@ -1,5 +1,5 @@
 """
-Script to stop all database services for the AI Document Assistant.
+Script to stop all database services for the ToolXpert.
 Stops Qdrant, Elasticsearch, Kibana, and MinIO containers.
 """
 import sys
@@ -135,7 +135,7 @@ def print_container_status():
 
 def main():
     """Main function to stop all database services."""
-    print("🔄 AI Document Assistant Database Shutdown")
+    print("🔄 ToolXpert Database Shutdown")
 
     try:
         # First show current status

@@ -1,5 +1,5 @@
 """
-Authentication routes for the AI Document Assistant API.
+Authentication routes for the ToolXpert API.
 """
 from fastapi import APIRouter, HTTPException, Depends, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm

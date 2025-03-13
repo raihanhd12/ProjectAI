@@ -1,5 +1,5 @@
 """
-Health and monitoring routes for the AI Document Assistant API.
+Health and monitoring routes for the ToolXpert API.
 """
 from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy.orm import Session

@@ -1,5 +1,5 @@
 """
-Script to check the health status of all database systems for the AI Document Assistant.
+Script to check the health status of all database systems for the ToolXpert.
 Checks MySQL, Qdrant, Elasticsearch, Kibana, and MinIO status.
 """
 import sys
@@ -376,7 +376,7 @@ def print_system_overview():
 
 def main():
     """Main function to check database health."""
-    print("🔍 AI Document Assistant Database Health Check")
+    print("🔍 ToolXpert Database Health Check")
 
     try:
         # First show overview

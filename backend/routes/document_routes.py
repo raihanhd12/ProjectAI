@@ -105,11 +105,12 @@ async def upload_documents(
                 temp_path = temp_file.name
 
             # Process document (this can be moved to background task if needed)
-            chunks_added = rag_model.add_document(
+            chunks_added = rag_model.add_documents(
                 temp_path,
                 file.filename,
                 # Add user_id to metadata
-                metadata={"user_id": current_user.id}
+                # Hilangkan named parameter metadata=
+                {"user_id": current_user.id}
             )
 
             # Save document metadata to DB

@@ -1,3 +1,3 @@
 """
-Retrieval-Augmented Generation module for AI Document Assistant.
+Retrieval-Augmented Generation module for ToolXpert.
 """

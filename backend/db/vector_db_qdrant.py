@@ -76,8 +76,8 @@ class QdrantDB:
         normalized_filename = helpers.normalize_filename(document_name)
 
         for i, (chunk, embedding) in enumerate(zip(document_chunks, embeddings)):
-            # Create unique ID for this chunk
-            point_id = f"{normalized_filename}_{i}"
+            # Generate UUID as point ID
+            point_id = str(uuid.uuid4())
 
             # Create point with embedding and metadata
             points.append(
@@ -87,7 +87,8 @@ class QdrantDB:
                     payload={
                         "text": chunk["text"],
                         "metadata": chunk["metadata"],
-                        "source": document_name
+                        "source": document_name,
+                        "custom_id": f"{normalized_filename}_{i}"  # Opsional
                     }
                 )
             )

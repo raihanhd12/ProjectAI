@@ -1,5 +1,5 @@
 """
-Comprehensive database initialization script for the AI Document Assistant.
+Comprehensive database initialization script for the ToolXpert.
 Initializes MySQL database, vector stores (Qdrant and Elasticsearch), and object storage (MinIO).
 """
 import sys
@@ -513,7 +513,7 @@ def create_minio_bucket():
 
 def update_env_file():
     """Update .env file with all database configurations."""
-    env_path = os.path.join(parent_dir, "..", ".env")
+    env_path = os.path.join(parent_dir, ".env")
 
     # Load existing .env
     env_content = {}
@@ -662,7 +662,7 @@ def print_management_ui_info():
 
 def main():
     """Main function to initialize all databases."""
-    print("🔄 Initializing AI Document Assistant Databases\n")
+    print("🔄 Initializing ToolXpert Databases\n")
 
     try:
         # 1. Initialize MySQL Database
@@ -735,7 +735,7 @@ def main():
         print_management_ui_info()
 
         print("\n🎉 All databases initialized successfully!")
-        print("   You can now run your application with 'python app.py'")
+        print("   You can now run your application with 'uvicorn app:app --reload --host 0.0.0.0 --port 8080'")
 
     except Exception as e:
         print(f"❌ Error initializing databases: {e}")

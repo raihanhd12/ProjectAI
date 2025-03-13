@@ -143,22 +143,10 @@ class HybridRAGModel:
 
         return chunks
 
-    def add_document(self, file_path: str, file_name: str,
-                     metadata: Optional[Dict[str, Any]] = None) -> int:
-        """
-        Add a document to both vector and keyword search.
-
-        Args:
-            file_path (str): Path to the PDF file
-            file_name (str): Document file name
-            metadata (Dict): Additional metadata to include (e.g., user_id)
-
-        Returns:
-            int: Number of chunks added
-        """
+    def add_documents(self, file_path: str, file_name: str,
+                      metadata: Optional[Dict[str, Any]] = None) -> int:
         # Process document into chunks
         document_chunks = self.process_document(file_path, file_name, metadata)
-
         if not document_chunks:
             return 0
 
@@ -404,24 +392,70 @@ class HybridRAGModel:
         except Exception as e:
             yield f"Error calling Digital Ocean GenAI API: {str(e)}"
 
-    def delete_document(self, doc_name: str, user_id: Optional[int] = None) -> bool:
+    def delete_document(self, document_name: str, filter_metadata: Optional[Dict[str, Any]] = None) -> bool:
         """
-        Delete a document from both vector and keyword search.
+        Delete all chunks belonging to a document.
 
         Args:
-            doc_name (str): Document name
-            user_id (Optional[int]): User ID to filter deletion (for multi-user systems)
+            document_name: Name of document to delete
+            filter_metadata: Optional metadata to filter deletion (e.g., user_id)
 
         Returns:
             bool: True if successful
         """
-        vector_success = self.vector_db.delete_document(
-            doc_name, filter_metadata={"user_id": user_id} if user_id else None)
+        try:
+            # Build filter for document deletion using source field and metadata
+            filter_conditions = [
+                # Match document name by source field
+                FieldCondition(
+                    key="source",
+                    match=MatchValue(value=document_name)
+                )
+            ]
 
-        elastic_success = self.elastic_db.delete_document(
-            doc_name, filter_metadata={"user_id": user_id} if user_id else None)
+            # Add metadata filters if provided
+            if filter_metadata and isinstance(filter_metadata, dict):
+                for key, value in filter_metadata.items():
+                    if value is not None:  # Only add non-None filters
+                        metadata_filter = FieldCondition(
+                            key=f"metadata.{key}",
+                            # Convert to string for consistent matching
+                            match=MatchValue(value=str(value))
+                        )
+                        filter_conditions.append(metadata_filter)
 
-        return vector_success and elastic_success
+            # Create final filter using AND logic
+            filter_obj = Filter(must=filter_conditions)
+
+            # First find all points matching the filter
+            search_result = self.client.scroll(
+                collection_name=self.collection_name,
+                filter=filter_obj,
+                limit=1000  # Adjust if you have more chunks per document
+            )
+
+            points = search_result[0]
+
+            if points:
+                # Extract IDs
+                point_ids = [point.id for point in points]
+
+                # Delete by IDs
+                self.client.delete(
+                    collection_name=self.collection_name,
+                    points_selector=models.PointIdsList(
+                        points=point_ids
+                    )
+                )
+
+                print(f"Deleted {len(point_ids)} chunks from vector store")
+                return True
+
+            return False
+
+        except Exception as e:
+            print(f"Error deleting document from Qdrant: {e}")
+            return False
 
     def reset_databases(self, user_id: Optional[int] = None) -> bool:
         """

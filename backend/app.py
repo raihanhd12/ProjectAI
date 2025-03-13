@@ -1,5 +1,5 @@
 """
-AI Document Assistant Backend API
+ToolXpert Backend API
 """
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -19,8 +19,8 @@ except ImportError as e:
 
 # Create FastAPI app
 app = FastAPI(
-    title="AI Document Assistant API",
-    description="Backend API for AI Document Assistant",
+    title="ToolXpert API",
+    description="Backend API for ToolXpert",
     version="1.0.0",
 )
 
@@ -47,7 +47,7 @@ app.include_router(health_routes.router, prefix="/api/health", tags=["health"])
 async def root():
     """Root endpoint with API information."""
     return {
-        "message": "AI Document Assistant API",
+        "message": "ToolXpert API",
         "documentation": "/docs",
         "version": "1.0.0"
     }

@@ -1,5 +1,5 @@
 """
-Chat routes for the AI Document Assistant API with user authentication.
+Chat routes for the ToolXpert API with user authentication.
 """
 from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks, Response
 from fastapi.responses import StreamingResponse

@@ -1,5 +1,5 @@
 """
-Configuration settings for the AI Document Assistant backend.
+Configuration settings for the ToolXpert backend.
 """
 import os
 import dotenv
@@ -17,7 +17,7 @@ DB_CONFIG = {
     "port": int(os.getenv("MYSQL_PORT", "3306")),
     "user": os.getenv("MYSQL_USER", "root"),
     "password": os.getenv("MYSQL_PASSWORD", ""),
-    "database": os.getenv("MYSQL_DATABASE", "project_ai"),
+    "database": os.getenv("MYSQL_DATABASE", "toolxpert"),
 }
 
 # JWT Settings
