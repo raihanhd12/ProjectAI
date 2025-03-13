@@ -1,21 +1,12 @@
 """
 ToolXpert Backend API
 """
-from fastapi import FastAPI, Request, HTTPException
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
-import os
-from sqlalchemy.orm import Session
-from routes import auth_routes
 
 # Import routes
-try:
-    from routes import document_routes, chat_routes, health_routes
-except ImportError as e:
-    print(
-        f"Import error: {e}. Please run this script from the backend directory.")
-    import sys
-    sys.exit(1)
+from routes import auth_routes, documents_routes
 
 # Create FastAPI app
 app = FastAPI(
@@ -35,10 +26,8 @@ app.add_middleware(
 
 # Include routes
 app.include_router(auth_routes.router, prefix="/api/auth", tags=["auth"])
-app.include_router(document_routes.router,
+app.include_router(documents_routes.router,
                    prefix="/api/documents", tags=["documents"])
-app.include_router(chat_routes.router, prefix="/api/chat", tags=["chat"])
-app.include_router(health_routes.router, prefix="/api/health", tags=["health"])
 
 # Root endpoint
 
@@ -61,7 +50,7 @@ async def startup_event():
     from db import Base, engine
 
     # Import models to ensure they're registered with Base
-    from db.models import Document, ChatSession, ChatMessage
+    from db.models import User, TokenBlacklist
 
     # Create database tables
     Base.metadata.create_all(bind=engine)

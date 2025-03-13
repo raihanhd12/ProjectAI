@@ -1,22 +1,11 @@
-# Vector search dan hybrid search components
-cryptography
-elasticsearch
 fastapi
-langchain
-langchain-community
-langchain-text-splitters
 minio
 passlib[bcrypt]
 pydantic
 PyJWT
-PyMuPDF
 pymysql
 python-dotenv
 python-jose[cryptography]
 python-multipart
-qdrant-client
-requests
-sentence-transformers
 SQLAlchemy
-sse-starlette
 uvicorn[standard]
