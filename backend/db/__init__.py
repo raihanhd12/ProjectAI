@@ -15,7 +15,7 @@ engine = create_engine(
     DATABASE_URL,
     pool_pre_ping=True,  # Verify connection before using from pool
     pool_recycle=3600,   # Recycle connections after 1 hour
-    echo=True           # Set to True for SQL logging
+    echo=False           # Set to True for SQL logging
 )
 
 # Create session factory

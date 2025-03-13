@@ -1,11 +1,17 @@
 fastapi
+langchain
 minio
 passlib[bcrypt]
 pydantic
 PyJWT
 pymysql
+pypdf2
+python-docx
 python-dotenv
 python-jose[cryptography]
 python-multipart
+qdrant-client
+sentence-transformers
 SQLAlchemy
+textract
 uvicorn[standard]

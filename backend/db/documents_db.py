@@ -11,20 +11,12 @@ from db.models import Document, User
 
 def save_document(db: Session, name: str, user_id: Optional[int] = None,
                   object_name: Optional[str] = None, file_size: Optional[int] = None,
-                  content_type: Optional[str] = None) -> bool:
+                  content_type: Optional[str] = None) -> Optional[int]:
     """
     Save document metadata to the database.
 
-    Args:
-        db: Database session
-        name: Document name
-        user_id: ID of the user who owns this document
-        object_name: Object name in storage
-        file_size: Size of the file in bytes
-        content_type: Content type of the file
-
     Returns:
-        bool: True if successful, False otherwise
+        int: Document ID if successful, None otherwise
     """
     try:
         # Check if document already exists for this user
@@ -43,7 +35,7 @@ def save_document(db: Session, name: str, user_id: Optional[int] = None,
             if content_type:
                 existing_doc.content_type = content_type
             db.commit()
-            return True
+            return existing_doc.id
 
         # Create new document record
         new_doc = Document(
@@ -55,14 +47,15 @@ def save_document(db: Session, name: str, user_id: Optional[int] = None,
         )
         db.add(new_doc)
         db.commit()
-        return True
+        db.refresh(new_doc)
+        return new_doc.id
 
     except Exception as e:
         db.rollback()
-        print(f"Error saving document: {str(e)}")  # Print full error
+        print(f"Error saving document: {str(e)}")
         import traceback
-        traceback.print_exc()  # Print stack trace
-        return False
+        traceback.print_exc()
+        return None
 
 
 def delete_document(db: Session, doc_name: str, user_id: Optional[int] = None) -> bool:
