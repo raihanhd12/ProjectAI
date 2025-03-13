@@ -1,5 +1,5 @@
-# utils/text_extractor.py
 import io
+import re
 from typing import Optional
 from PyPDF2 import PdfReader
 from docx import Document
@@ -14,7 +14,12 @@ class TextExtractor:
                     reader = PdfReader(file)
                     text = ""
                     for page in reader.pages:
-                        text += page.extract_text() + "\n"
+                        page_text = page.extract_text()
+                        # Clean up excessive whitespace
+                        page_text = re.sub(r'\n\s*\n', '\n', page_text)
+                        # Remove redundant spaces
+                        page_text = re.sub(r' +', ' ', page_text)
+                        text += page_text + "\n"
                     return text
             elif "docx" in content_type:
                 with io.BytesIO(file_content) as file:
