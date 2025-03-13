@@ -44,15 +44,6 @@ async def upload_document(
     db: Session = Depends(get_db_session),
     current_user: User = Depends(get_current_user)
 ):
-    """
-    Upload a document.
-
-    Args:
-        file: File to upload
-
-    Returns:
-        Document metadata
-    """
     try:
         # Save file to MinIO
         success, object_name = await doc_storage.upload_file(
@@ -64,10 +55,17 @@ async def upload_document(
             raise HTTPException(
                 status_code=500, detail="Failed to upload file to storage")
 
-        # Get file size
-        content = await file.seek(0)
-        content = await file.read()
-        file_size = len(content)
+        # Get file size - perbaiki bagian ini
+        file_size = 0
+        try:
+            # Reposition file pointer to beginning
+            await file.seek(0)
+            # Read file content
+            content = await file.read()
+            file_size = len(content)
+        except Exception as e:
+            print(f"Error getting file size: {e}")
+            file_size = 0  # Default if can't determine size
 
         # Save metadata to database
         documents_db.save_document(
@@ -80,7 +78,11 @@ async def upload_document(
         )
 
         # Generate download URL
-        download_url = doc_storage.get_file_url(object_name, expires=3600)
+        try:
+            download_url = doc_storage.get_file_url(object_name, expires=3600)
+        except Exception as e:
+            print(f"Error generating URL: {e}")
+            download_url = None
 
         return {
             "filename": file.filename,
@@ -93,48 +95,9 @@ async def upload_document(
     except HTTPException:
         raise
     except Exception as e:
+        print(f"Upload error details: {str(e)}")
         raise HTTPException(
             status_code=500, detail=f"Upload failed: {str(e)}")
-
-
-@router.get("/download/{doc_id}")
-async def download_document(
-    doc_id: int,
-    db: Session = Depends(get_db_session),
-    current_user: User = Depends(get_current_user)
-):
-    """
-    Download a document.
-
-    Args:
-        doc_id: Document ID
-
-    Returns:
-        Redirect to presigned URL
-    """
-    try:
-        # Get document metadata
-        document = documents_db.get_document_by_id(db, doc_id, current_user.id)
-        if not document:
-            raise HTTPException(status_code=404, detail="Document not found")
-
-        object_name = document.get("object_name")
-        if not object_name:
-            raise HTTPException(
-                status_code=404, detail="Document file not found")
-
-        # Generate presigned URL
-        download_url = doc_storage.get_file_url(object_name, expires=3600)
-        if not download_url:
-            raise HTTPException(
-                status_code=500, detail="Failed to generate download URL")
-
-        return RedirectResponse(url=download_url)
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"Download failed: {str(e)}")
 
 
 @router.delete("/{doc_id}")

@@ -116,10 +116,11 @@ class DocumentStorage:
             str: Presigned URL or None if failed
         """
         try:
+            # Minio expects expires as int, so no conversion needed
             url = self.client.presigned_get_object(
                 bucket_name=self.bucket_name,
                 object_name=object_name,
-                expires=expires
+                expires=expires  # Pastikan ini integer
             )
             return url
         except S3Error as e:
