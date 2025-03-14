@@ -58,35 +58,52 @@ def save_document(db: Session, name: str, user_id: Optional[int] = None,
         return None
 
 
-def delete_document(db: Session, doc_name: str, user_id: Optional[int] = None) -> bool:
+def delete_vectors(self, collection_name: str, filter_conditions: Optional[Dict] = None, vector_ids: Optional[List[str]] = None) -> bool:
     """
-    Delete a document from the database.
+    Delete vectors from the collection based on filter or IDs.
 
     Args:
-        db: Database session
-        doc_name: Document name
-        user_id: Optional user ID to restrict to user's documents
+        collection_name: Name of the collection
+        filter_conditions: Filter conditions to match vectors to delete
+        vector_ids: List of vector IDs to delete
 
     Returns:
-        bool: True if successful, False otherwise
+        bool: True if deletion was successful
     """
     try:
-        # Find the document
-        query = db.query(Document).filter(Document.name == doc_name)
-        if user_id:
-            query = query.filter(Document.user_id == user_id)
+        if vector_ids:
+            # Delete by IDs
+            self.client.delete(
+                collection_name=collection_name,
+                points_selector=models.PointIdsList(
+                    points=vector_ids
+                )
+            )
+            return True
+        elif filter_conditions:
+            # Delete by filter
+            filter_query = models.Filter(
+                must=[
+                    models.FieldCondition(
+                        key=key,
+                        match=models.MatchValue(value=value)
+                    )
+                    for key, value in filter_conditions.items()
+                ]
+            )
 
-        doc = query.first()
-        if not doc:
+            self.client.delete(
+                collection_name=collection_name,
+                points_selector=models.FilterSelector(
+                    filter=filter_query
+                )
+            )
+            return True
+        else:
+            print("Error: Either vector_ids or filter_conditions must be provided")
             return False
-
-        # Delete the document
-        db.delete(doc)
-        db.commit()
-        return True
     except Exception as e:
-        db.rollback()
-        print(f"Error deleting document: {e}")
+        print(f"Error deleting vectors: {e}")
         return False
 
 

@@ -3,7 +3,7 @@ Document routes for the ToolXpert API.
 """
 from dependencies import get_current_user, get_db_session
 from utils.documents_storage import DocumentStorage
-from db.models import User, Document
+from db.models import User, Document, DocumentChunk
 from db import documents_db
 from sqlalchemy.orm import Session
 from typing import List
@@ -284,6 +284,21 @@ async def delete_document(
         query = db.query(Document).filter(Document.id == doc_id)
         if current_user.id:
             query = query.filter(Document.user_id == current_user.id)
+
+        # Get all chunks for the document to get the vector IDs
+        chunks = db.query(DocumentChunk).filter(
+            DocumentChunk.document_id == doc_id).all()
+        vector_ids = [
+            chunk.embedding_id for chunk in chunks if chunk.embedding_id]
+
+        # Delete from Qdrant if there are vector IDs
+        if vector_ids:
+            from db.vector_db import VectorDB
+            vector_db = VectorDB()
+            vector_db.delete_vectors(
+                collection_name="documents",
+                vector_ids=vector_ids
+            )
 
         doc = query.first()
         if not doc:

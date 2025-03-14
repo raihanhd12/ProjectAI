@@ -75,3 +75,51 @@ class VectorDB:
         except Exception as e:
             print(f"Error searching vectors: {e}")
             return []
+
+    def delete_vectors(self, collection_name: str, filter_conditions: Optional[Dict] = None, vector_ids: Optional[List[str]] = None) -> bool:
+        """
+        Delete vectors from the collection based on filter or IDs.
+
+        Args:
+            collection_name: Name of the collection
+            filter_conditions: Filter conditions to match vectors to delete
+            vector_ids: List of vector IDs to delete
+
+        Returns:
+            bool: True if deletion was successful
+        """
+        try:
+            if vector_ids:
+                # Delete by IDs
+                self.client.delete(
+                    collection_name=collection_name,
+                    points_selector=models.PointIdsList(
+                        points=vector_ids
+                    )
+                )
+                return True
+            elif filter_conditions:
+                # Delete by filter
+                filter_query = models.Filter(
+                    must=[
+                        models.FieldCondition(
+                            key=key,
+                            match=models.MatchValue(value=value)
+                        )
+                        for key, value in filter_conditions.items()
+                    ]
+                )
+
+                self.client.delete(
+                    collection_name=collection_name,
+                    points_selector=models.FilterSelector(
+                        filter=filter_query
+                    )
+                )
+                return True
+            else:
+                print("Error: Either vector_ids or filter_conditions must be provided")
+                return False
+        except Exception as e:
+            print(f"Error deleting vectors: {e}")
+            return False
