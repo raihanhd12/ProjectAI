@@ -18,6 +18,7 @@ sys.path.insert(0, backend_dir)
 try:
     from db import Base, engine
     from db.models import Document, ChatSession, ChatMessage, User, TokenBlacklist
+    from utils.documents_storage import DocumentStorage
     import config
     print("✅ Successfully imported modules")
 except ImportError as e:
@@ -29,13 +30,7 @@ except ImportError as e:
 # Constants for services
 QDRANT_URL = os.getenv("QDRANT_URL", "http://localhost:6333")
 ELASTICSEARCH_URL = os.getenv("ELASTICSEARCH_URL", "http://localhost:9200")
-# Remove 'http://' from MINIO_ENDPOINT as it's added explicitly in commands
-MINIO_ENDPOINT = os.getenv("MINIO_ENDPOINT", "localhost:9000")
-if MINIO_ENDPOINT.startswith("http://"):
-    MINIO_ENDPOINT = MINIO_ENDPOINT.replace("http://", "")
-MINIO_ACCESS_KEY = os.getenv("MINIO_ACCESS_KEY", "minioadmin")
-MINIO_SECRET_KEY = os.getenv("MINIO_SECRET_KEY", "minioadmin")
-MINIO_BUCKET_NAME = os.getenv("MINIO_BUCKET_NAME", "documents")
+doc_storage = DocumentStorage()
 
 #############################################
 # MySQL Database Reset Functions
@@ -169,39 +164,26 @@ def reset_elasticsearch():
 
 
 def reset_minio():
-    """Reset all objects in MinIO bucket."""
-    print("\n🗑️ Resetting MinIO storage...")
+    """Reset all objects in MinIO."""
+    print("\n🗑️ Resetting MinIO object storage...")
     try:
-        # Use MinIO Client (mc) in a Docker container to empty the bucket
-        # First, add the MinIO server as a host
-        print(f"  📌 Connecting to MinIO at {MINIO_ENDPOINT}")
-        subprocess.run([
-            "docker", "run", "--rm", "--network=host",
-            "minio/mc", "alias", "set", "myminio",
-            f"http://{MINIO_ENDPOINT}",
-            MINIO_ACCESS_KEY, MINIO_SECRET_KEY
-        ], check=True, capture_output=True)
+        # List all objects
+        objects = doc_storage.list_objects()
+        if not objects:
+            print("✅ No objects to delete in MinIO")
+            return True
 
-        # Then remove all objects in the bucket
-        result = subprocess.run([
-            "docker", "run", "--rm", "--network=host",
-            "minio/mc", "rm", "--recursive", "--force", f"myminio/{MINIO_BUCKET_NAME}/*"
-        ], capture_output=True)
+        # Delete each object
+        for obj in objects:
+            object_name = obj.get("name")
+            print(f"  📌 Deleting MinIO object: {object_name}")
+            if not doc_storage.delete_file(object_name):
+                print(f"⚠️ Failed to delete object {object_name}")
 
-        # If bucket doesn't exist or is empty, recreate it
-        if result.returncode != 0:
-            print(f"Note: Bucket may be empty or doesn't exist. Creating it...")
-            subprocess.run([
-                "docker", "run", "--rm", "--network=host",
-                "minio/mc", "mb", "--ignore-existing", f"myminio/{MINIO_BUCKET_NAME}"
-            ], check=True, capture_output=True)
-
-        print("✅ MinIO storage reset successfully")
+        print("✅ All MinIO objects reset successfully")
         return True
-    except subprocess.CalledProcessError as e:
+    except Exception as e:
         print(f"❌ Error resetting MinIO: {e}")
-        if hasattr(e, 'stderr') and e.stderr:
-            print(f"  Error details: {e.stderr.decode()}")
         return False
 
 #############################################

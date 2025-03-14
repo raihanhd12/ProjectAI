@@ -1,4 +1,7 @@
 from typing import Optional
+import os
+import json
+import requests
 from fastapi import BackgroundTasks
 from sqlalchemy.orm import Session
 
@@ -17,11 +20,59 @@ class DocumentProcessor:
         self.vector_db = VectorDB()
         self.collection_name = collection_name
 
-        # Initialize collection
+        # Get Elasticsearch URL from environment or use default
+        self.es_url = os.getenv('ELASTICSEARCH_URL', 'http://localhost:9200')
+        self.enable_hybrid_search = os.getenv(
+            'ENABLE_HYBRID_SEARCH', 'True').lower() == 'true'
+
+        # Initialize vector collection
         self.vector_db.create_collection(
             collection_name=self.collection_name,
             vector_size=self.embedder.get_dimension()
         )
+
+        # Initialize Elasticsearch index if hybrid search is enabled
+        if self.enable_hybrid_search:
+            self._initialize_elasticsearch_index()
+
+    def _initialize_elasticsearch_index(self):
+        """Create Elasticsearch index with proper mappings if it doesn't exist."""
+        try:
+            # Check if index exists
+            response = requests.head(f"{self.es_url}/documents")
+
+            if response.status_code != 200:
+                # Create index with mappings
+                mapping = {
+                    "mappings": {
+                        "properties": {
+                            "document_id": {"type": "integer"},
+                            "chunk_index": {"type": "integer"},
+                            "filename": {"type": "keyword"},
+                            "content_type": {"type": "keyword"},
+                            "user_id": {"type": "integer"},
+                            "text": {"type": "text"}
+                        }
+                    },
+                    "settings": {
+                        "number_of_shards": 1,
+                        "number_of_replicas": 0
+                    }
+                }
+
+                create_response = requests.put(
+                    f"{self.es_url}/documents",
+                    json=mapping
+                )
+
+                if create_response.status_code in (200, 201):
+                    print("✅ Created Elasticsearch index for documents")
+                else:
+                    print(
+                        f"⚠️ Failed to create Elasticsearch index: {create_response.status_code}")
+                    print(create_response.text)
+        except Exception as e:
+            print(f"Error initializing Elasticsearch: {e}")
 
     async def process_document(self, db: Session, doc_id: int) -> bool:
         try:
@@ -80,6 +131,37 @@ class DocumentProcessor:
                     }
                 )
                 db.add(chunk_record)
+
+            # If hybrid search is enabled, index in Elasticsearch
+            if self.enable_hybrid_search:
+                try:
+                    # Index each chunk in Elasticsearch
+                    for idx, chunk in enumerate(chunks):
+                        doc_data = {
+                            "document_id": document.id,
+                            "chunk_index": idx,
+                            "filename": document.name,
+                            "content_type": document.content_type,
+                            "user_id": document.user_id,
+                            "text": chunk
+                        }
+
+                        # Use bulk indexing for better performance with multiple chunks
+                        if idx % 10 == 0 and idx > 0:
+                            print(f"Indexed {idx} chunks in Elasticsearch")
+
+                        es_response = requests.post(
+                            f"{self.es_url}/documents/_doc",
+                            json=doc_data
+                        )
+
+                        if es_response.status_code not in (200, 201):
+                            print(
+                                f"⚠️ Elasticsearch indexing issue: {es_response.status_code}")
+
+                except Exception as es_error:
+                    print(f"Error indexing in Elasticsearch: {es_error}")
+                    # Continue processing - failure in ES shouldn't fail the whole process
 
             db.commit()
             return True

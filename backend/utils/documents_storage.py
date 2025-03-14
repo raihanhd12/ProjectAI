@@ -169,3 +169,70 @@ class DocumentStorage:
         except S3Error as e:
             print(f"Error getting file content: {e}")
             return None
+
+    def list_objects(self) -> List[Dict[str, Any]]:
+        """
+        List all objects in the bucket.
+
+        Returns:
+            List[Dict[str, Any]]: List of objects with metadata
+        """
+        try:
+            objects = self.client.list_objects(
+                self.bucket_name, recursive=True)
+            result = []
+
+            for obj in objects:
+                result.append({
+                    "name": obj.object_name,
+                    "size": obj.size,
+                    "last_modified": obj.last_modified
+                })
+
+            return result
+        except S3Error as e:
+            print(f"Error listing objects: {e}")
+            return []
+
+    def remove_all_objects(self) -> bool:
+        """
+        Remove all objects from the bucket.
+
+        Returns:
+            bool: True if all objects were successfully removed
+        """
+        try:
+            # Get all objects
+            objects = self.list_objects()
+
+            if not objects:
+                print(f"No objects found in bucket: {self.bucket_name}")
+                return True
+
+            print(f"Found {len(objects)} objects to delete")
+
+            # Delete each object
+            success_count = 0
+            for obj in objects:
+                try:
+                    object_name = obj["name"]
+                    print(f"Deleting object: {object_name}")
+                    self.client.remove_object(
+                        bucket_name=self.bucket_name,
+                        object_name=object_name
+                    )
+                    success_count += 1
+                except Exception as e:
+                    print(f"Error deleting object {obj['name']}: {e}")
+
+            # Check if all objects were deleted
+            if success_count == len(objects):
+                print(f"Successfully deleted all {success_count} objects")
+                return True
+            else:
+                print(f"Deleted {success_count} of {len(objects)} objects")
+                return False
+
+        except Exception as e:
+            print(f"Error removing all objects: {e}")
+            return False

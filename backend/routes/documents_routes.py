@@ -146,24 +146,100 @@ async def search_documents(
         # Initialize components
         from utils.text_embedder import TextEmbedder
         from db.vector_db import VectorDB
+        import requests
+        import json
+        import config
 
         embedder = TextEmbedder()
         vector_db = VectorDB()
 
-        # Create query embedding
-        query_embedding = embedder.embed_text(query)
+        # Determine if we should use hybrid search
+        enable_hybrid = config.ENABLE_HYBRID_SEARCH if hasattr(
+            config, 'ENABLE_HYBRID_SEARCH') else False
+        vector_weight = float(os.getenv("VECTOR_WEIGHT", "0.7"))
+        keyword_weight = float(os.getenv("KEYWORD_WEIGHT", "0.3"))
 
-        # Search vector database with user filter
-        results = vector_db.search(
+        # Get vector search results
+        query_embedding = embedder.embed_texts([query])[0]
+        vector_results = vector_db.search(
             collection_name="documents",
             query_vector=query_embedding,
-            limit=limit,
+            limit=limit * 2,  # Get more results for reranking
             filter_conditions={"user_id": current_user.id}
         )
 
-        # Format and return results
+        # If hybrid search is enabled, get keyword search results from Elasticsearch
+        if enable_hybrid:
+            try:
+                # Query Elasticsearch
+                es_url = f"{os.getenv('ELASTICSEARCH_URL', 'http://localhost:9200')}/documents/_search"
+                es_query = {
+                    "query": {
+                        "bool": {
+                            "must": [
+                                {"match": {"text": query}},
+                                {"term": {"user_id": current_user.id}}
+                            ]
+                        }
+                    },
+                    "size": limit * 2
+                }
+
+                es_response = requests.post(es_url, json=es_query)
+                if es_response.status_code == 200:
+                    keyword_results = es_response.json().get("hits", {}).get("hits", [])
+
+                    # Combine and rerank results
+                    combined_results = {}
+
+                    # Add vector search results with weight
+                    for result in vector_results:
+                        doc_id = result["metadata"]["document_id"]
+                        combined_results[doc_id] = {
+                            "document_id": doc_id,
+                            "document_name": result["metadata"]["filename"],
+                            "text": result["metadata"]["text"],
+                            "score": result["score"] * vector_weight,
+                            "source": "vector"
+                        }
+
+                    # Add keyword search results with weight
+                    for hit in keyword_results:
+                        doc_id = hit["_source"]["document_id"]
+                        if doc_id in combined_results:
+                            # Document already in results from vector search
+                            combined_results[doc_id]["score"] += hit["_score"] * \
+                                keyword_weight
+                            combined_results[doc_id]["source"] = "hybrid"
+                        else:
+                            combined_results[doc_id] = {
+                                "document_id": doc_id,
+                                "document_name": hit["_source"]["filename"],
+                                "text": hit["_source"]["text"],
+                                "score": hit["_score"] * keyword_weight,
+                                "source": "keyword"
+                            }
+
+                    # Sort by score and limit results
+                    final_results = sorted(
+                        combined_results.values(),
+                        key=lambda x: x["score"],
+                        reverse=True
+                    )[:limit]
+
+                    return {
+                        "query": query,
+                        "hybrid_search": True,
+                        "results": final_results
+                    }
+            except Exception as e:
+                print(f"Elasticsearch error: {e}")
+                # Fall back to vector search only
+
+        # Format and return vector search results
         return {
             "query": query,
+            "hybrid_search": False,
             "results": [
                 {
                     "document_id": result["metadata"]["document_id"],
@@ -171,7 +247,7 @@ async def search_documents(
                     "score": result["score"],
                     "text": result["metadata"]["text"]
                 }
-                for result in results
+                for result in vector_results[:limit]
             ]
         }
     except Exception as e:
